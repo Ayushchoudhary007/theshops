@@ -1,0 +1,38 @@
+/* ─────────────────────────────────────────────────────────────
+   src/index.css
+   Global reset — ensures every page fills the full viewport.
+   ───────────────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  min-height: 100vh;
+  overflow-x: hidden;
+  /* no horizontal scroll */
+}
+
+body {
+  /* Fallback gradient — visible during page load before React mounts */
+  background: linear-gradient(135deg,
+      #fce4e4 0%, #fde8d8 20%, #fef9c3 40%,
+      #dcfce7 60%, #dbeafe 80%, #ede9fe 100%);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* React root — must be full width/height */
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
