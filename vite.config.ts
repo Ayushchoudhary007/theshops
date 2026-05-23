@@ -11,7 +11,7 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    // sql.js ships a WASM binary — Vite must NOT pre-bundle it.
+    // sql.js ships a WASM binary — Vite must NOT pre-bundle it
     exclude: ["sql.js"],
   },
 
@@ -22,7 +22,6 @@ export default defineConfig({
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
     proxy: {
-      // Dev proxy — avoids CORS issues when server is on :4000
       "/api": {
         target:       "http://localhost:4000",
         changeOrigin: true,
@@ -41,6 +40,9 @@ export default defineConfig({
     },
   },
 
-  // Needed for Netlify / Vercel SPA routing
-  // (also set _redirects or vercel.json — see deployment section in README)
+  // Ensure the WASM file in public/ is copied to dist/ during build.
+  // Vite does this automatically for files in public/ — no extra config needed.
+  // The locateFile: (f) => `/${f}` in web.adapter.ts points to /sql-wasm.wasm
+  // which maps to public/sql-wasm.wasm in dev and dist/sql-wasm.wasm in prod.
+  publicDir: "public",
 });
