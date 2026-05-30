@@ -149,25 +149,71 @@ export const AuthService = {
   // ── Login (all roles) ─────────────────────────────────────
 
   async login(form: LoginForm): Promise<{ user: AuthUser; mode: "linked" | "offline-only" }> {
-    // Try server first
+    // Try server — capture status code separately to handle 401 cases distinctly
+    let serverStatus = 0;
+    let serverErrMsg = "";
     try {
-      const data = await serverFetch<ServerAuthResponse>("/api/auth/login", {
-        email: form.email, password: form.password,
+      const res = await fetch(`${SERVER_URL}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: form.email, password: form.password }),
       });
-      const user: AuthUser = {
-        ...data.user, token: data.token,
-        linkedAt:    new Date().toISOString(),
-        permissions: data.user.permissions ?? [],
-      };
-      UserStore.set(user);
-      OfflineAccountStore.clear();
-      const passwordHash = await hashPassword(form.password);
-      CredentialStore.upsert({ email: form.email, passwordHash, userSnapshot: user, cachedAt: new Date().toISOString() });
-      return { user, mode: "linked" };
+      serverStatus = res.status;
+      if (res.ok) {
+        const data = await res.json() as ServerAuthResponse;
+        const user: AuthUser = {
+          ...data.user, token: data.token,
+          linkedAt:    new Date().toISOString(),
+          permissions: data.user.permissions ?? [],
+        };
+        UserStore.set(user);
+        OfflineAccountStore.clear();
+        const passwordHash = await hashPassword(form.password);
+        CredentialStore.upsert({ email: form.email, passwordHash, userSnapshot: user, cachedAt: new Date().toISOString() });
+        return { user, mode: "linked" };
+      }
+      const body = await res.json().catch(() => ({})) as Record<string, string>;
+      serverErrMsg = body["error"] ?? `Server error ${res.status}`;
     } catch {
-      // Server unreachable — try offline cache
+      // Network unreachable — serverStatus stays 0
     }
 
+    // 401 "No account found" = user registered offline, account never reached server.
+    // Auto-register them now using their cached credentials.
+    if (serverStatus === 401 && serverErrMsg.toLowerCase().includes("no account")) {
+      const cred = CredentialStore.getByEmail(form.email);
+      if (cred && await verifyPassword(form.password, cred.passwordHash)) {
+        try {
+          const snap     = cred.userSnapshot;
+          const shopName = snap.shops?.[0]?.name ?? snap.shopName ?? "My Shop";
+          const regRes   = await fetch(`${SERVER_URL}/api/auth/register/owner`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: snap.name, email: form.email, password: form.password, shopName }),
+          });
+          if (regRes.ok) {
+            const data = await regRes.json() as ServerAuthResponse;
+            const user: AuthUser = {
+              ...data.user, token: data.token,
+              linkedAt:    new Date().toISOString(),
+              permissions: data.user.permissions ?? [],
+            };
+            UserStore.set(user);
+            OfflineAccountStore.clear();
+            const passwordHash = await hashPassword(form.password);
+            CredentialStore.upsert({ email: form.email, passwordHash, userSnapshot: user, cachedAt: new Date().toISOString() });
+            return { user, mode: "linked" };
+          }
+        } catch { /* fall through to offline */ }
+      }
+    }
+
+    // 401 with a real auth error (wrong password) — don't fall through to offline
+    if (serverStatus === 401 && serverErrMsg && !serverErrMsg.toLowerCase().includes("no account")) {
+      throw new Error(serverErrMsg);
+    }
+
+    // Server unreachable — use offline credential cache
     const cred = CredentialStore.getByEmail(form.email);
     if (!cred) {
       throw new Error(
