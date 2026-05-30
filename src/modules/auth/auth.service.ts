@@ -14,7 +14,13 @@ import { UserStore, OfflineAccountStore, CredentialStore } from "./auth.storage"
 // ── Single source of truth for server URL ─────────────────────
 // Set VITE_API_URL in your .env. Never exposed to the user.
 
-const SERVER_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+// Ensure the URL always has a protocol — guards against missing https:// in env var
+function normaliseUrl(raw: string | undefined): string {
+  const url = (raw ?? "http://localhost:4000").trim().replace(/\/$/, "");
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `https://${url}`;
+}
+const SERVER_URL = normaliseUrl(import.meta.env.VITE_API_URL);
 
 // ── Internal fetch ────────────────────────────────────────────
 

@@ -1,11 +1,18 @@
-// src/database/adapters/web.adapter.ts
+// src/database/adapter/web.adapter.ts
 //
-// Browser adapter — sql.js (SQLite WASM) + IndexedDB persistence.
+// Browser SQLite adapter using sql.js (WebAssembly) + IndexedDB persistence.
 //
-// The WASM binary is served from /sql-wasm.wasm (copied to public/ at build time).
-// This avoids CDN dependencies, version mismatches, and works fully offline.
-// It also satisfies the Cross-Origin-Embedder-Policy requirement because the
-// file is served from the same origin as the app.
+// WASM loading strategy:
+// - sql-wasm-browser.js is the browser-optimised build of sql.js
+// - It requests "sql-wasm-browser.wasm" via locateFile
+// - Both files are copied to public/ by scripts/copy-wasm.cjs at build time
+// - Served from the SAME ORIGIN — required for Cross-Origin-Embedder-Policy
+//
+// DO NOT use dynamic import("sql.js") — it fails silently under COEP because
+// the npm package is not marked crossorigin. Import statically instead.
+
+// @ts-ignore — sql.js has no types for the browser bundle path
+import initSqlJs from "sql.js/dist/sql-wasm-browser.js";
 
 export interface DBAdapter {
   exec(sql: string, params?: unknown[]): Promise<unknown[][]>;
@@ -17,68 +24,17 @@ let _db:  unknown = null;
 let _SQL: unknown = null;
 
 // ── sql.js initialiser ────────────────────────────────────────
-// Loads the WASM from /sql-wasm.wasm (same origin, always correct version).
-// Falls back to CDN only if the local file can't be found (shouldn't happen
-// in production but handles local dev without public/ copied).
 
 async function loadSqlJs(): Promise<unknown> {
   if (_SQL) return _SQL;
 
-  // Attempt 1: npm package with local WASM file (production path)
-  try {
-    const mod = await import("sql.js");
-
-    const candidates: unknown[] = [
-      (mod as any).default?.default,
-      (mod as any).default,
-      (mod as any).initSqlJs,
-      mod,
-    ];
-
-    for (const candidate of candidates) {
-      if (typeof candidate === "function") {
-        _SQL = await (candidate as Function)({
-          // Point locateFile to the WASM served from our own origin.
-          // In production (Vercel) this is https://yourapp.vercel.app/sql-wasm.wasm
-          // In dev this is http://localhost:5173/sql-wasm.wasm
-          locateFile: (file: string) => `/${file}`,
-        });
-        return _SQL;
-      }
-    }
-  } catch {
-    // npm import failed — fall through to CDN fallback
-  }
-
-  // Attempt 2: CDN fallback — uses the version matching our package.json
-  // sql.js 1.14.1 is at this CDN path
-  const CDN = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.14.1";
-  _SQL = await loadSqlJsFromCDN(CDN);
-  return _SQL;
-}
-
-function loadSqlJsFromCDN(cdn: string): Promise<unknown> {
-  return new Promise((resolve, reject) => {
-    if (typeof (window as any).initSqlJs === "function") {
-      resolve(
-        (window as any).initSqlJs({ locateFile: (f: string) => `${cdn}/${f}` })
-      );
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.src = `${cdn}/sql-wasm.js`;
-    script.onload = () => {
-      const init = (window as any).initSqlJs;
-      if (typeof init !== "function") {
-        reject(new Error("initSqlJs not found on window after CDN load"));
-        return;
-      }
-      resolve(init({ locateFile: (f: string) => `${cdn}/${f}` }));
-    };
-    script.onerror = () => reject(new Error(`Failed to load sql.js from CDN: ${cdn}`));
-    document.head.appendChild(script);
+  _SQL = await (initSqlJs as Function)({
+    // Both files are in public/ → served from same origin as the app.
+    // sql-wasm-browser.js calls locateFile("sql-wasm-browser.wasm") to find the binary.
+    locateFile: (file: string) => `/${file}`,
   });
+
+  return _SQL;
 }
 
 // ── DB instance getter ────────────────────────────────────────
@@ -113,7 +69,7 @@ function openIDB(): Promise<IDBDatabase> {
 async function loadFromIndexedDB(): Promise<Uint8Array | null> {
   try {
     const idb = await openIDB();
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       const tx  = idb.transaction(IDB_STORE, "readonly");
       const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
       req.onsuccess = () => resolve(req.result ?? null);
@@ -127,14 +83,14 @@ async function loadFromIndexedDB(): Promise<Uint8Array | null> {
 async function saveToIndexedDB(data: Uint8Array): Promise<void> {
   try {
     const idb = await openIDB();
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
       const tx = idb.transaction(IDB_STORE, "readwrite");
       tx.objectStore(IDB_STORE).put(data, IDB_KEY);
       tx.oncomplete = () => resolve();
       tx.onerror    = () => resolve();
     });
   } catch {
-    // Non-fatal — data is still in memory
+    // Non-fatal — data is in memory
   }
 }
 

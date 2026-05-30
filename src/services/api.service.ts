@@ -3,7 +3,14 @@
 // Central HTTP client. Server URL comes from VITE_API_URL only —
 // never from user input or localStorage.
 
-const BASE = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+// Ensure the URL always has a protocol — guards against VITE_API_URL
+// being set without https:// in Vercel (e.g. "myapp.railway.app" instead of "https://myapp.railway.app")
+function normaliseUrl(raw: string | undefined): string {
+  const url = (raw ?? "http://localhost:4000").trim().replace(/\/$/, "");
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  return `https://${url}`;
+}
+const BASE = normaliseUrl(import.meta.env.VITE_API_URL);
 const K_TOKEN = "theshop_auth_token";
 
 function getToken(): string | null {

@@ -42,7 +42,11 @@ export const syncEvents = new SyncEventEmitter();
 const K_TOKEN  = "theshop_auth_token";
 
 function getServerBase(): string {
-  return (import.meta.env.VITE_API_URL ?? "http://localhost:4000").replace(/\/$/, "");
+  const raw = (import.meta.env.VITE_API_URL ?? "http://localhost:4000").trim().replace(/\/$/, "");
+  // Guard: if env var is set without https:// (e.g. "myapp.railway.app"),
+  // treat it as https to prevent fetch resolving it as a relative path
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return raw;
+  return `https://${raw}`;
 }
 
 function getToken(): string | null {

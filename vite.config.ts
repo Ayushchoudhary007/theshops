@@ -11,21 +11,17 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    // sql.js ships a WASM binary — Vite must NOT pre-bundle it
-    exclude: ["sql.js"],
+    // Exclude both sql.js variants from pre-bundling — they contain WASM
+    exclude: ["sql.js", "sql.js/dist/sql-wasm-browser.js"],
   },
 
   server: {
     headers: {
-      // Required for SharedArrayBuffer used by sql.js WASM
       "Cross-Origin-Opener-Policy":   "same-origin",
       "Cross-Origin-Embedder-Policy": "require-corp",
     },
     proxy: {
-      "/api": {
-        target:       "http://localhost:4000",
-        changeOrigin: true,
-      },
+      "/api": { target: "http://localhost:4000", changeOrigin: true },
     },
   },
 
@@ -40,9 +36,5 @@ export default defineConfig({
     },
   },
 
-  // Ensure the WASM file in public/ is copied to dist/ during build.
-  // Vite does this automatically for files in public/ — no extra config needed.
-  // The locateFile: (f) => `/${f}` in web.adapter.ts points to /sql-wasm.wasm
-  // which maps to public/sql-wasm.wasm in dev and dist/sql-wasm.wasm in prod.
   publicDir: "public",
 });
