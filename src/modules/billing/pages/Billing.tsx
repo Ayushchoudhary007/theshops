@@ -1,27 +1,24 @@
 // src/modules/billing/pages/Billing.tsx
 //
-// Responsive layout:
-//   Mobile  (<768px)  — single column, tab bar (Form / Preview / History),
-//                       sticky bottom bar with total + save CTA,
-//                       preview rendered as full-screen modal sheet.
-//   Tablet  (768-1199)— left form panel (400px) + right preview panel,
-//                       preview toggle button replaces always-on panel.
-//   Desktop (≥1200px) — three-zone: sidebar form | item area | live preview.
+// Responsive billing page with inventory item search.
+// Typing in the item name field searches local inventory in real-time.
+// Selecting a result auto-fills name, price and SKU.
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BRAND, RADIUS, COLOR, GLOBAL_STYLES } from "../../../design-tokens";
 import { BillingService, computeSummary } from "../billing.service";
 import { CustomerService } from "../../customers/customers.service";
-import type { BillDraft, Bill } from "../billing.types";//there also this BillItem
+import type { BillDraft, Bill } from "../billing.types";
 import { PAYMENT_MODES } from "../billing.types";
 import type { Customer } from "../../customers/customers.types";
+import type { InventoryItem } from "../../inventory/pages/inventory.types";
 import QRScanner from "../components/QRScanner";
 import BillPreview from "../components/BillPreview";
 import { query } from "../../../database";
 
-// ── Responsive CSS ────────────────────────────────────────────────────────────
+// ── Responsive CSS ────────────────────────────────────────────
+
 const RESPONSIVE_STYLES = `
-  /* ── Base layout shells ── */
   .bl-root {
     display: flex;
     height: 100vh;
@@ -34,7 +31,6 @@ const RESPONSIVE_STYLES = `
     position: relative;
   }
 
-  /* ── Left panel (form) ── */
   .bl-form-panel {
     width: 400px;
     min-width: 400px;
@@ -49,7 +45,6 @@ const RESPONSIVE_STYLES = `
   .bl-form-panel::-webkit-scrollbar { width: 3px; }
   .bl-form-panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
 
-  /* ── Right panel (preview) ── */
   .bl-preview-panel {
     flex: 1;
     overflow-y: auto;
@@ -62,31 +57,16 @@ const RESPONSIVE_STYLES = `
   .bl-preview-panel::-webkit-scrollbar { width: 3px; }
   .bl-preview-panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
 
-  /* ── Mobile tab bar ── */
-  .bl-tab-bar {
-    display: none;
-  }
+  .bl-tab-bar   { display: none; }
+  .bl-bottom-bar { display: none; }
+  .bl-preview-sheet { display: none; }
 
-  /* ── Mobile bottom bar ── */
-  .bl-bottom-bar {
-    display: none;
-  }
-
-  /* ── Mobile preview sheet ── */
-  .bl-preview-sheet {
-    display: none;
-  }
-
-  /* ── History panel ── */
   .bl-history-panel {
     flex: 1;
     overflow-y: auto;
     padding: 12px;
   }
-  .bl-history-panel::-webkit-scrollbar { width: 3px; }
-  .bl-history-panel::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
 
-  /* ── Section label ── */
   .bl-section-label {
     font-size: 10px;
     font-weight: 800;
@@ -96,7 +76,6 @@ const RESPONSIVE_STYLES = `
     margin-bottom: 10px;
   }
 
-  /* ── Item row ── */
   .bl-item-row {
     display: flex;
     align-items: center;
@@ -110,11 +89,9 @@ const RESPONSIVE_STYLES = `
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  /* ── Qty stepper ── */
   .bl-qty-stepper {
     display: flex;
     align-items: center;
-    gap: 0;
     border: 1px solid rgba(255,255,255,0.70);
     border-radius: 8px;
     overflow: hidden;
@@ -150,7 +127,6 @@ const RESPONSIVE_STYLES = `
   .bl-qty-input::-webkit-outer-spin-button,
   .bl-qty-input::-webkit-inner-spin-button { -webkit-appearance: none; }
 
-  /* ── Payment pill buttons ── */
   .bl-pay-btn {
     flex: 1;
     padding: 9px 4px;
@@ -171,18 +147,45 @@ const RESPONSIVE_STYLES = `
     box-shadow: 0 2px 8px rgba(192,57,43,0.15);
   }
 
-  /* ── Suggestion dropdown ── */
+  /* ── Suggestion dropdown (shared for customers + inventory) ── */
   .bl-suggestion-item {
     padding: 9px 14px;
     cursor: pointer;
     font-size: 13px;
     border-bottom: 1px solid rgba(255,255,255,0.35);
     transition: background 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
   .bl-suggestion-item:hover { background: rgba(192,57,43,0.06); }
   .bl-suggestion-item:last-child { border-bottom: none; }
 
-  /* ── History card ── */
+  /* ── Inventory suggestion specific ── */
+  .bl-inv-suggestion {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.35);
+    transition: background 0.1s;
+  }
+  .bl-inv-suggestion:hover { background: rgba(192,57,43,0.06); }
+  .bl-inv-suggestion:last-child { border-bottom: none; }
+  .bl-inv-thumb {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    object-fit: cover;
+    background: rgba(0,0,0,0.04);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+  }
+
   .bl-history-card {
     border-radius: 12px;
     padding: 11px 14px;
@@ -201,15 +204,13 @@ const RESPONSIVE_STYLES = `
     transform: translateY(-1px);
   }
 
-  /* ── Add item bar ── */
   .bl-add-bar {
     display: grid;
-    grid-template-columns: 1fr 52px 68px auto;
+    grid-template-columns: 1fr 52px 80px auto;
     gap: 6px;
     margin-bottom: 10px;
   }
 
-  /* ── Saved success screen ── */
   .bl-saved-screen {
     min-height: 100vh;
     display: flex;
@@ -222,122 +223,57 @@ const RESPONSIVE_STYLES = `
     background-attachment: fixed;
   }
 
-  /* ── No-print ── */
-  @media print {
-    .bl-no-print { display: none !important; }
-  }
+  @media print { .bl-no-print { display: none !important; } }
 
-  /* ════════════════════════════════════════
-     TABLET  768px – 1199px
-  ════════════════════════════════════════ */
   @media (max-width: 1199px) {
-    .bl-form-panel {
-      width: 380px;
-      min-width: 320px;
-    }
-    .bl-preview-panel {
-      padding: 20px 14px;
-    }
+    .bl-form-panel { width: 380px; min-width: 320px; }
+    .bl-preview-panel { padding: 20px 14px; }
   }
 
-  /* ════════════════════════════════════════
-     MOBILE  < 768px
-  ════════════════════════════════════════ */
   @media (max-width: 767px) {
-    /* Root becomes single-column */
-    .bl-root {
-      flex-direction: column;
-      height: 100dvh;
-      overflow: hidden;
-    }
-
-    /* Form panel takes all space above tab bar */
+    .bl-root { flex-direction: column; height: 100dvh; overflow: hidden; }
     .bl-form-panel {
-      width: 100%;
-      min-width: unset;
-      flex: 1;
-      border-right: none;
-      border-bottom: 1px solid rgba(255,255,255,0.45);
-      /* leave room for sticky bottom bar */
-      padding-bottom: 70px;
+      width: 100%; min-width: unset; flex: 1;
+      border-right: none; border-bottom: 1px solid rgba(255,255,255,0.45);
+      padding-bottom: 70px; padding-top: 60px;
     }
-
-    /* Hide desktop preview panel on mobile */
-    .bl-preview-panel {
-      display: none;
-    }
-
-    /* Show mobile tab bar */
+    .bl-preview-panel { display: none; }
     .bl-tab-bar {
       display: flex;
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 200;
-      background: rgba(255,255,255,0.82);
-      backdrop-filter: blur(20px);
+      position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+      background: rgba(255,255,255,0.82); backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border-bottom: 1px solid rgba(255,255,255,0.55);
-      padding: 0 12px;
-      height: 52px;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
+      padding: 0 12px; height: 52px;
+      align-items: center; justify-content: space-between; gap: 8px;
     }
-
-    /* Push form content below fixed tab bar */
-    .bl-form-panel {
-      padding-top: 60px;
-    }
-
-    /* Show mobile sticky bottom CTA */
     .bl-bottom-bar {
       display: flex;
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 200;
-      background: rgba(255,255,255,0.88);
-      backdrop-filter: blur(20px);
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+      background: rgba(255,255,255,0.88); backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border-top: 1px solid rgba(255,255,255,0.55);
-      padding: 10px 16px;
-      gap: 10px;
-      align-items: center;
+      padding: 10px 16px; gap: 10px; align-items: center;
     }
-
-    /* Show preview sheet (full-screen slide-up) */
     .bl-preview-sheet {
       display: block;
-      position: fixed;
-      inset: 0;
-      z-index: 300;
+      position: fixed; inset: 0; z-index: 300;
       background: linear-gradient(135deg,
         #fce4e4 0%, #fde8d8 20%, #fef9c3 40%,
         #dcfce7 60%, #dbeafe 80%, #ede9fe 100%);
-      overflow-y: auto;
-      padding: 16px 16px 120px;
+      overflow-y: auto; padding: 16px 16px 120px;
       animation: sheetUp 0.28s cubic-bezier(0.32,0.72,0,1);
     }
     @keyframes sheetUp {
       from { transform: translateY(100%); }
       to   { transform: translateY(0); }
     }
-
-    /* Compact add-item bar on mobile */
-    .bl-add-bar {
-      grid-template-columns: 1fr 44px 60px auto;
-      gap: 5px;
-    }
-
-    /* Larger tap targets */
+    .bl-add-bar { grid-template-columns: 1fr 44px 70px auto; gap: 5px; }
     .bl-qty-btn { width: 30px; height: 34px; }
   }
 `;
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
 
 const EMPTY_DRAFT = (): BillDraft => ({
   customer_id: null,
@@ -350,7 +286,7 @@ const EMPTY_DRAFT = (): BillDraft => ({
   notes: "",
 });
 
-// ── Component ─────────────────────────────────────────────────────────────────
+// ── Component ─────────────────────────────────────────────────
 
 export default function Billing() {
   const [draft,       setDraft]       = useState<BillDraft>(EMPTY_DRAFT());
@@ -366,14 +302,19 @@ export default function Billing() {
   const [iQty,   setIQty]   = useState(1);
   const [iPrice, setIPrice] = useState<number | "">("");
 
-  // UI
-  const [showQR,       setShowQR]       = useState(false);
-  const [showHistory,  setShowHistory]  = useState(false);
-  const [showPreview,  setShowPreview]  = useState(false); // mobile preview sheet
-  const [saving,       setSaving]       = useState(false);
-  const [saved,        setSaved]        = useState<Bill | null>(null);
-  const [toast,        setToast]        = useState<string | null>(null);
-  const [suggestions,  setSuggestions]  = useState<Customer[]>([]);
+  // Inventory search
+  const [invSuggestions, setInvSuggestions] = useState<InventoryItem[]>([]);
+  const [invLoading,     setInvLoading]     = useState(false);
+  const invSearchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // UI state
+  const [showQR,      setShowQR]      = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [saving,      setSaving]      = useState(false);
+  const [saved,       setSaved]       = useState<Bill | null>(null);
+  const [toast,       setToast]       = useState<string | null>(null);
+  const [custSuggs,   setCustSuggs]   = useState<Customer[]>([]);
 
   const nameRef  = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
@@ -405,6 +346,45 @@ export default function Billing() {
     setTimeout(() => setToast(null), 2800);
   }
 
+  // ── Inventory search ───────────────────────────────────────
+  // Debounced search — queries local SQLite by name, SKU or barcode
+
+  async function searchInventory(term: string) {
+    if (!term.trim()) { setInvSuggestions([]); return; }
+    setInvLoading(true);
+    try {
+      const rows = await query<InventoryItem>(
+        `SELECT * FROM inventory
+         WHERE (name LIKE ? OR sku LIKE ? OR barcode LIKE ?)
+           AND status != 'out-of-stock'
+         ORDER BY name ASC LIMIT 8`,
+        [`%${term}%`, `%${term}%`, `%${term}%`]
+      );
+      setInvSuggestions(rows);
+    } catch {
+      setInvSuggestions([]);
+    } finally {
+      setInvLoading(false);
+    }
+  }
+
+  function handleItemNameChange(val: string) {
+    setIName(val);
+    // Clear previous debounce
+    if (invSearchRef.current) clearTimeout(invSearchRef.current);
+    if (!val.trim()) { setInvSuggestions([]); return; }
+    // Debounce 150ms — fast but avoids hammering SQLite on every keystroke
+    invSearchRef.current = setTimeout(() => void searchInventory(val), 150);
+  }
+
+  function applyInventoryItem(item: InventoryItem) {
+    setIName(item.name);
+    setIPrice(item.price);
+    setInvSuggestions([]);
+    // Auto-focus qty field so user can adjust quantity
+    setTimeout(() => priceRef.current?.focus(), 50);
+  }
+
   // ── Customer ───────────────────────────────────────────────
 
   async function handleQrResult(raw: string) {
@@ -424,18 +404,18 @@ export default function Billing() {
   function applyCustomer(c: Customer) {
     setCustomer(c);
     setDraft(d => ({ ...d, customer_id: c.id, customer_name: c.name, customer_phone: c.phone }));
-    setSuggestions([]);
+    setCustSuggs([]);
   }
 
   async function handlePhoneInput(val: string) {
     setDraft(d => ({ ...d, customer_phone: val, customer_id: null }));
     setCustomer(null);
     if (val.length >= 6) {
-      setSuggestions(await query<Customer>(
+      setCustSuggs(await query<Customer>(
         "SELECT * FROM customers WHERE phone LIKE ? LIMIT 5", [`${val}%`]
       ));
     } else {
-      setSuggestions([]);
+      setCustSuggs([]);
     }
   }
 
@@ -452,6 +432,7 @@ export default function Billing() {
       }],
     }));
     setIName(""); setIQty(1); setIPrice("");
+    setInvSuggestions([]);
     setTimeout(() => nameRef.current?.focus(), 50);
   }
 
@@ -503,6 +484,8 @@ export default function Billing() {
     setSaved(null);
     setShowPreview(false);
     setShowHistory(false);
+    setInvSuggestions([]);
+    setIName(""); setIQty(1); setIPrice("");
   }
 
   const summary    = computeSummary(draft.items, draft.discount, draft.tax_rate);
@@ -534,7 +517,6 @@ export default function Billing() {
         <button
           onClick={() => { setCustomer(null); setDraft(d => ({ ...d, customer_id: null, customer_name: "", customer_phone: "" })); }}
           style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: COLOR.textFaint, lineHeight: 1 }}
-          aria-label="Clear customer"
         >✕</button>
       </div>
     );
@@ -573,7 +555,6 @@ export default function Billing() {
         <style>{RESPONSIVE_STYLES}</style>
         <div className="bl-saved-screen">
           <div style={{ width: "100%", maxWidth: 460 }}>
-            {/* Success header */}
             <div style={{
               textAlign: "center", marginBottom: 24,
               background: "rgba(255,255,255,0.60)", backdropFilter: "blur(16px)",
@@ -597,16 +578,15 @@ export default function Billing() {
               shopAddress={shopAddr}
             />
 
-            {/* Action buttons */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 20 }}>
               {[
-                { label: "🖨 Print",     action: () => window.print() },
-                { label: "💬 WhatsApp",  action: () => {
+                { label: "🖨 Print",    action: () => window.print() },
+                { label: "💬 WhatsApp", action: () => {
                     const tel = saved.customer_phone.replace(/\D/g, "");
                     window.open(`https://wa.me/${tel}?text=Your bill ${saved.bill_number} · ₹${saved.total.toFixed(2)}`, "_blank");
                   }
                 },
-                { label: "+ New Bill",   action: startNew, primary: true },
+                { label: "+ New Bill", action: startNew, primary: true },
               ].map(btn => (
                 <button
                   key={btn.label}
@@ -623,7 +603,7 @@ export default function Billing() {
     );
   }
 
-  // ── Main form content (shared across breakpoints) ──────────
+  // ── Form content ───────────────────────────────────────────
 
   function FormContent() {
     return (
@@ -658,21 +638,20 @@ export default function Billing() {
               onChange={e => void handlePhoneInput(e.target.value)}
               inputMode="numeric"
             />
-            {suggestions.length > 0 && (
+            {custSuggs.length > 0 && (
               <div style={{
                 position: "absolute", top: "100%", left: 0, right: 0, zIndex: 50,
-                background: "rgba(255,255,255,0.92)", backdropFilter: "blur(16px)",
+                background: "rgba(255,255,255,0.96)", backdropFilter: "blur(16px)",
                 borderRadius: 12, overflow: "hidden",
                 border: "1px solid rgba(255,255,255,0.65)",
-                boxShadow: "0 8px 24px rgba(0,0,0,0.10)",
-                marginTop: 4,
+                boxShadow: "0 8px 24px rgba(0,0,0,0.10)", marginTop: 4,
               }}>
-                {suggestions.map(c => (
+                {custSuggs.map(c => (
                   <div key={c.id} className="bl-suggestion-item" onClick={() => applyCustomer(c)}>
                     <span style={{ fontWeight: 600, color: COLOR.text }}>{c.name}</span>
                     <span style={{ color: COLOR.textSoft, marginLeft: 6 }}>{c.phone}</span>
                     {c.loyalty_pts > 0 && (
-                      <span style={{ float: "right", fontSize: 11, color: "#15803d" }}>⭐ {c.loyalty_pts} pts</span>
+                      <span style={{ marginLeft: "auto", fontSize: 11, color: "#15803d" }}>⭐ {c.loyalty_pts} pts</span>
                     )}
                   </div>
                 ))}
@@ -685,34 +664,147 @@ export default function Billing() {
         <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.40)", flex: 1 }}>
           <div className="bl-section-label">Items</div>
 
-          {/* Add bar */}
-          <div className="bl-add-bar">
-            <input
-              ref={nameRef}
-              className="iv-input" placeholder="Item name"
-              value={iName} onChange={e => setIName(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") priceRef.current?.focus(); }}
-            />
-            <input
-              className="iv-input" type="number" placeholder="Qty"
-              value={iQty} onChange={e => setIQty(Math.max(1, Number(e.target.value)))}
-              min={1} style={{ textAlign: "center" }}
-            />
-            <input
-              ref={priceRef}
-              className="iv-input" type="number" placeholder="₹"
-              value={iPrice}
-              onChange={e => setIPrice(e.target.value === "" ? "" : Number(e.target.value))}
-              min={0} inputMode="decimal"
-              onKeyDown={e => { if (e.key === "Enter") addItem(); }}
-            />
-            <button
-              className="iv-btn-primary"
-              onClick={addItem}
-              style={{ whiteSpace: "nowrap", padding: "9px 12px", fontSize: 13 }}
-            >
-              + Add
-            </button>
+          {/* ── Add bar with inventory search ── */}
+          <div style={{ marginBottom: 10 }}>
+            {/* Item name with inventory autocomplete */}
+            <div style={{ position: "relative", marginBottom: 6 }}>
+              <input
+                ref={nameRef}
+                className="iv-input"
+                placeholder="🔍 Search inventory or type item name…"
+                value={iName}
+                onChange={e => handleItemNameChange(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    if (invSuggestions.length > 0) {
+                      applyInventoryItem(invSuggestions[0]);
+                    } else {
+                      priceRef.current?.focus();
+                    }
+                  }
+                  if (e.key === "Escape") setInvSuggestions([]);
+                }}
+                autoComplete="off"
+              />
+
+              {/* Inventory suggestions dropdown */}
+              {(invSuggestions.length > 0 || (invLoading && iName.length > 0)) && (
+                <div style={{
+                  position: "absolute", top: "100%", left: 0, right: 0, zIndex: 60,
+                  background: "rgba(255,255,255,0.98)", backdropFilter: "blur(20px)",
+                  borderRadius: 12, overflow: "hidden",
+                  border: "1px solid rgba(255,255,255,0.65)",
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.12)",
+                  marginTop: 4, maxHeight: 280, overflowY: "auto",
+                }}>
+                  {/* Header */}
+                  <div style={{
+                    padding: "7px 14px",
+                    background: "rgba(192,57,43,0.05)",
+                    borderBottom: "1px solid rgba(0,0,0,0.06)",
+                    fontSize: 10, fontWeight: 700, letterSpacing: "0.07em",
+                    textTransform: "uppercase", color: COLOR.textSoft,
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                  }}>
+                    <span>📦 Inventory matches</span>
+                    <span style={{ fontSize: 10, color: COLOR.textFaint }}>Enter to select first · Esc to close</span>
+                  </div>
+
+                  {invLoading ? (
+                    <div style={{ padding: "14px", textAlign: "center", color: COLOR.textFaint, fontSize: 13 }}>
+                      Searching…
+                    </div>
+                  ) : invSuggestions.map(item => (
+                    <div
+                      key={item.id}
+                      className="bl-inv-suggestion"
+                      onClick={() => applyInventoryItem(item)}
+                    >
+                      {/* Image or emoji placeholder */}
+                      <div className="bl-inv-thumb">
+                        {item.image ? (
+                          <img
+                            src={item.image}
+                            alt={item.name}
+                            style={{ width: 32, height: 32, borderRadius: 8, objectFit: "cover" }}
+                            onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          />
+                        ) : (
+                          <span>📦</span>
+                        )}
+                      </div>
+
+                      {/* Details */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: COLOR.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.name}
+                        </div>
+                        <div style={{ fontSize: 11, color: COLOR.textSoft, display: "flex", gap: 8 }}>
+                          {item.brand && <span>{item.brand}</span>}
+                          {item.sku   && <span>SKU: {item.sku}</span>}
+                          <span style={{
+                            color: item.status === "in-stock" ? "#15803d" : item.status === "low-stock" ? "#b45309" : "#b91c1c",
+                            fontWeight: 600,
+                          }}>
+                            {item.stock} in stock
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Price */}
+                      <div style={{ fontSize: 14, fontWeight: 800, color: BRAND, flexShrink: 0 }}>
+                        ₹{item.price.toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* "Use as custom item" option — always shown at bottom */}
+                  {iName.trim() && (
+                    <div
+                      style={{
+                        padding: "9px 14px", cursor: "pointer",
+                        borderTop: invSuggestions.length > 0 ? "1px solid rgba(0,0,0,0.06)" : "none",
+                        background: "rgba(0,0,0,0.02)",
+                        fontSize: 12, color: COLOR.textSoft,
+                        display: "flex", alignItems: "center", gap: 6,
+                      }}
+                      onClick={() => {
+                        setInvSuggestions([]);
+                        priceRef.current?.focus();
+                      }}
+                    >
+                      <span>✏️</span>
+                      <span>Use <strong style={{ color: COLOR.text }}>"{iName}"</strong> as a custom item</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Qty + Price + Add on same row */}
+            <div className="bl-add-bar" style={{ marginBottom: 0 }}>
+              <div /> {/* spacer — name field is above */}
+              <input
+                className="iv-input" type="number" placeholder="Qty"
+                value={iQty} onChange={e => setIQty(Math.max(1, Number(e.target.value)))}
+                min={1} style={{ textAlign: "center" }}
+              />
+              <input
+                ref={priceRef}
+                className="iv-input" type="number" placeholder="₹ Price"
+                value={iPrice}
+                onChange={e => setIPrice(e.target.value === "" ? "" : Number(e.target.value))}
+                min={0} inputMode="decimal"
+                onKeyDown={e => { if (e.key === "Enter") addItem(); }}
+              />
+              <button
+                className="iv-btn-primary"
+                onClick={addItem}
+                style={{ whiteSpace: "nowrap", padding: "9px 12px", fontSize: 13 }}
+              >
+                + Add
+              </button>
+            </div>
           </div>
 
           {/* Items list */}
@@ -722,11 +814,10 @@ export default function Billing() {
               fontSize: 13, border: "1.5px dashed rgba(0,0,0,0.10)",
               borderRadius: 12, marginTop: 4,
             }}>
-              No items yet — add something above
+              Search inventory above or type an item name to add
             </div>
           ) : draft.items.map((it, i) => (
             <div key={i} className="bl-item-row">
-              {/* Name + unit price */}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: COLOR.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {it.name}
@@ -734,7 +825,6 @@ export default function Billing() {
                 <div style={{ fontSize: 11, color: COLOR.textFaint }}>₹{it.unit_price} each</div>
               </div>
 
-              {/* Qty stepper */}
               <div className="bl-qty-stepper">
                 <button className="bl-qty-btn" onClick={() => stepQty(i, -1)} aria-label="Decrease">−</button>
                 <input
@@ -745,16 +835,14 @@ export default function Billing() {
                 <button className="bl-qty-btn" onClick={() => stepQty(i, +1)} aria-label="Increase">+</button>
               </div>
 
-              {/* Line total */}
               <div style={{ fontSize: 13, fontWeight: 700, color: BRAND, minWidth: 60, textAlign: "right" }}>
                 ₹{(it.unit_price * it.quantity).toFixed(0)}
               </div>
 
-              {/* Remove */}
               <button
                 onClick={() => removeItem(i)}
                 style={{ background: "none", border: "none", fontSize: 16, cursor: "pointer", color: COLOR.textFaint, padding: "0 2px", lineHeight: 1 }}
-                aria-label="Remove item"
+                aria-label="Remove"
               >✕</button>
             </div>
           ))}
@@ -795,7 +883,7 @@ export default function Billing() {
           </div>
         </div>
 
-        {/* ── Summary + save (desktop/tablet only — mobile uses bottom bar) ── */}
+        {/* ── Summary + save (desktop/tablet) ── */}
         <div className="bl-no-print" style={{ padding: "12px 16px" }}>
           <SummaryRows />
           <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
@@ -857,10 +945,8 @@ export default function Billing() {
       <style>{GLOBAL_STYLES}</style>
       <style>{RESPONSIVE_STYLES}</style>
 
-      {/* QR scanner modal */}
       {showQR && <QRScanner onResult={handleQrResult} onClose={() => setShowQR(false)} />}
 
-      {/* Toast */}
       {toast && (
         <div style={{
           position: "fixed", bottom: 80, left: "50%", transform: "translateX(-50%)",
@@ -873,19 +959,12 @@ export default function Billing() {
         </div>
       )}
 
-      {/* ── Mobile: preview sheet ── */}
+      {/* Mobile preview sheet */}
       {showPreview && (
         <div className="bl-preview-sheet bl-no-print">
-          {/* Sheet header */}
-          <div style={{
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            marginBottom: 16,
-          }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: COLOR.text }}>Bill Preview</div>
-            <button
-              onClick={() => setShowPreview(false)}
-              style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLOR.textSoft }}
-            >✕</button>
+            <button onClick={() => setShowPreview(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: COLOR.textSoft }}>✕</button>
           </div>
           <BillPreview draft={draft} billNumber={nextBillNo} shopName={shopName} shopGst={shopGst} shopAddress={shopAddr} />
         </div>
@@ -893,67 +972,47 @@ export default function Billing() {
 
       <div className="bl-root">
 
-        {/* ════════ MOBILE TAB BAR ════════ */}
+        {/* Mobile tab bar */}
         <div className="bl-tab-bar bl-no-print">
-          {/* Left: bill number */}
-          <div style={{ fontSize: 12, fontWeight: 700, color: COLOR.text, minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: COLOR.text }}>
             <span style={{ color: COLOR.textFaint, fontWeight: 400, fontSize: 10 }}>Bill </span>
             {nextBillNo}
           </div>
-
-          {/* Center: tab buttons */}
           <div style={{ display: "flex", gap: 4 }}>
             {[
               { label: "📝 Form",    active: !showHistory, action: () => setShowHistory(false) },
               { label: "🕐 History", active: showHistory,  action: () => setShowHistory(true)  },
             ].map(t => (
-              <button
-                key={t.label}
-                onClick={t.action}
-                style={{
-                  fontSize: 11, fontWeight: 600, padding: "5px 10px",
-                  borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
-                  border: t.active ? `1.5px solid ${BRAND}` : "1.5px solid transparent",
-                  background: t.active ? "rgba(192,57,43,0.09)" : "transparent",
-                  color: t.active ? BRAND : COLOR.textMid,
-                }}
-              >
+              <button key={t.label} onClick={t.action} style={{
+                fontSize: 11, fontWeight: 600, padding: "5px 10px",
+                borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+                border: t.active ? `1.5px solid ${BRAND}` : "1.5px solid transparent",
+                background: t.active ? "rgba(192,57,43,0.09)" : "transparent",
+                color: t.active ? BRAND : COLOR.textMid,
+              }}>
                 {t.label}
               </button>
             ))}
           </div>
-
-          {/* Right: preview button */}
-          <button
-            onClick={() => setShowPreview(true)}
-            style={{
-              fontSize: 11, fontWeight: 600, padding: "5px 10px",
-              borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
-              border: "1.5px solid rgba(255,255,255,0.65)",
-              background: "rgba(255,255,255,0.50)",
-              color: COLOR.textMid,
-            }}
-          >
+          <button onClick={() => setShowPreview(true)} style={{
+            fontSize: 11, fontWeight: 600, padding: "5px 10px",
+            borderRadius: 8, cursor: "pointer", fontFamily: "inherit",
+            border: "1.5px solid rgba(255,255,255,0.65)",
+            background: "rgba(255,255,255,0.50)", color: COLOR.textMid,
+          }}>
             👁 Preview
           </button>
         </div>
 
-        {/* ════════ LEFT PANEL (form / history) ════════ */}
+        {/* Left panel */}
         <div className="bl-form-panel bl-no-print">
-
-          {/* Desktop/tablet header */}
-          <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.45)" }}
-               className="bl-no-print">
+          <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.45)" }} className="bl-no-print">
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <h2 style={{ fontSize: 17, fontWeight: 800, color: COLOR.text, margin: 0 }}>New Bill</h2>
                 <div style={{ fontSize: 11, color: COLOR.textSoft, marginTop: 2 }}>{nextBillNo}</div>
               </div>
-              <button
-                className="iv-btn-ghost"
-                style={{ fontSize: 12 }}
-                onClick={() => setShowHistory(h => !h)}
-              >
+              <button className="iv-btn-ghost" style={{ fontSize: 12 }} onClick={() => setShowHistory(h => !h)}>
                 {showHistory ? "📝 New bill" : "🕐 History"}
               </button>
             </div>
@@ -962,43 +1021,22 @@ export default function Billing() {
           {showHistory ? <HistoryContent /> : <FormContent />}
         </div>
 
-        {/* ════════ RIGHT PANEL (desktop/tablet preview) ════════ */}
+        {/* Right panel — desktop live preview */}
         <div className="bl-preview-panel bl-no-print">
-          <div style={{ fontSize: 11, color: COLOR.textSoft, fontWeight: 500, marginBottom: -4 }}>
-            LIVE PREVIEW
-          </div>
-          <BillPreview
-            draft={draft}
-            billNumber={nextBillNo}
-            shopName={shopName}
-            shopGst={shopGst}
-            shopAddress={shopAddr}
-          />
+          <div style={{ fontSize: 11, color: COLOR.textSoft, fontWeight: 500, marginBottom: -4 }}>LIVE PREVIEW</div>
+          <BillPreview draft={draft} billNumber={nextBillNo} shopName={shopName} shopGst={shopGst} shopAddress={shopAddr} />
         </div>
 
-        {/* ════════ MOBILE BOTTOM BAR ════════ */}
+        {/* Mobile bottom bar */}
         <div className="bl-bottom-bar bl-no-print">
-          {/* Mini summary */}
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, color: COLOR.textSoft }}>
               {draft.items.length} item{draft.items.length !== 1 ? "s" : ""}
               {draft.discount > 0 && <span style={{ color: "#15803d" }}> · -₹{draft.discount}</span>}
             </div>
-            <div style={{ fontSize: 17, fontWeight: 800, color: BRAND }}>
-              ₹{summary.total.toFixed(2)}
-            </div>
+            <div style={{ fontSize: 17, fontWeight: 800, color: BRAND }}>₹{summary.total.toFixed(2)}</div>
           </div>
-
-          {/* Clear */}
-          <button
-            className="iv-btn-ghost"
-            style={{ flexShrink: 0, padding: "10px 14px", fontSize: 13 }}
-            onClick={startNew}
-          >
-            Clear
-          </button>
-
-          {/* Save */}
+          <button className="iv-btn-ghost" style={{ flexShrink: 0, padding: "10px 14px", fontSize: 13 }} onClick={startNew}>Clear</button>
           <button
             className="iv-btn-primary"
             style={{ flexShrink: 0, padding: "11px 20px", fontSize: 14, fontWeight: 700 }}
