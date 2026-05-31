@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { AuthService } from "./auth.service";
 import { hasPermission, hasAllPermissions, hasAnyPermission } from "./auth.permissions";
 import { getNetworkState } from "../../hooks/useNetworkStatus";
@@ -27,8 +28,8 @@ export interface UseAuthReturn extends AuthState {
   reload:         () => void;
   trySync:        () => Promise<void>;   // push pending owner reg to server
   refreshSession: () => Promise<void>;   // re-fetch permissions from server
-  logout:         () => void;
-  logoutAndForget:() => void;            // also clears offline credential cache
+  logout:         () => Promise<void>;
+  logoutAndForget:() => Promise<void>;   // also clears offline credential cache
   discardOffline: () => void;
 
   // Role shortcuts
@@ -53,6 +54,7 @@ export function useAuth(): UseAuthReturn {
   const [state,      setState]      = useState<AuthState>(() => AuthService.getAuthState());
   const [syncResult, setSyncResult] = useState<SyncResult>("idle");
   const wasOnline                   = useRef(false);
+  const navigate                    = useNavigate();
 
   const reload = useCallback(() => {
     setState(AuthService.getAuthState());
@@ -108,15 +110,17 @@ export function useAuth(): UseAuthReturn {
 
   // ── Session management ────────────────────────────────────
 
-  const logout = useCallback(() => {
-    AuthService.logout();
+  const logout = useCallback(async () => {
+    await AuthService.logout();
     reload();
-  }, [reload]);
+    navigate("/login");
+  }, [reload, navigate]);
 
-  const logoutAndForget = useCallback(() => {
-    AuthService.logoutAndForget();
+  const logoutAndForget = useCallback(async () => {
+    await AuthService.logoutAndForget();
     reload();
-  }, [reload]);
+    navigate("/login");
+  }, [reload, navigate]);
 
   const discardOffline = useCallback(() => {
     AuthService.discardOfflineAccount();

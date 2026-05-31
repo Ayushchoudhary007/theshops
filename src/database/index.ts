@@ -62,3 +62,37 @@ export async function run(sql: string, params: unknown[] = []): Promise<void> {
   const db = await getAdapter();
   await db.run(sql, params);
 }
+
+/** Wipes all user data from the local DB on logout.
+ *  Keeps device_id in meta so the device is still recognised on next login.
+ *  Resets sync timestamps so the next login pulls everything fresh from server.
+ */
+export async function clearUserData(): Promise<void> {
+  const tables = [
+    "bill_items",
+    "bills",
+    "inventory",
+    "customers",
+    "notifications",
+    "barcode_cache",
+    "sync_queue",
+  ];
+  for (const t of tables) {
+    try { await run(`DELETE FROM ${t}`); } catch { /* table may not exist yet */ }
+  }
+  // Reset sync timestamps — forces full pull on next login
+  const syncKeys = [
+    "last_bills_pull",
+    "last_inventory_pull",
+    "last_inventory_push",
+    "last_sync_at",
+    "shop_name",
+    "shop_address",
+    "shop_gst",
+    "tax_rate",
+  ];
+  for (const k of syncKeys) {
+    try { await run("DELETE FROM meta WHERE key = ?", [k]); } catch { /* ok */ }
+  }
+  console.log("[DB] User data cleared ✓");
+}

@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { AuthService } from "./auth.service";
+import { syncEngine } from "../../sync/sync.engine.client";
 import { SubAccountService } from "./sub_account.service";
 import { CredentialStore, UserStore } from "./auth.storage";
 import { useNetworkStatus } from "../../hooks/useNetworkStatus";
@@ -253,12 +254,15 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const { user, mode } = await AuthService.login(login);
-      if (mode === "offline-only") setSuccess("Signed in offline — data stays on this device until you reconnect.");
-      setTimeout(() => {
-        if (user.role === "owner")        navigate("/");
-        else if (user.role === "manager") navigate("/");
-        else                              navigate("/billing");
-      }, mode === "offline-only" ? 1200 : 0);
+      if (mode === "offline-only") {
+        setSuccess("Signed in offline — data stays on this device until you reconnect.");
+        setTimeout(() => navigate(user.role === "staff" ? "/billing" : "/"), 1200);
+      } else {
+        // Online — pull all server data before navigating
+        setSuccess("Signed in! Syncing your data…");
+        syncEngine.sync().catch(console.error);
+        setTimeout(() => navigate(user.role === "staff" ? "/billing" : "/"), 800);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Login failed.");
     } finally {

@@ -10,6 +10,7 @@ import type { AuthUser, AuthState, LoginForm, RegisterForm, OfflineAccount, Loca
 import { OWNER_PERMISSIONS } from "./auth.permissions";
 import { hashPassword, verifyPassword, generateLocalId } from "./crypto.utils";
 import { UserStore, OfflineAccountStore, CredentialStore } from "./auth.storage";
+import { clearUserData } from "../../database";
 
 // ── Single source of truth for server URL ─────────────────────
 // Set VITE_API_URL in your .env. Never exposed to the user.
@@ -260,8 +261,17 @@ export const AuthService = {
 
   // ── Session management ────────────────────────────────────
 
-  logout()         { UserStore.clear(); },
-  logoutAndForget(){ UserStore.clear(); OfflineAccountStore.clear(); CredentialStore.clear(); },
+  async logout(): Promise<void> {
+    UserStore.clear();
+    await clearUserData();
+  },
+
+  async logoutAndForget(): Promise<void> {
+    UserStore.clear();
+    OfflineAccountStore.clear();
+    CredentialStore.clear();
+    await clearUserData();
+  },
   discardOfflineAccount() { OfflineAccountStore.clear(); },
 
   getCachedCredential(email: string): LocalCredential | null {
