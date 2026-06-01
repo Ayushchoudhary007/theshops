@@ -43,27 +43,24 @@ export default function Notifications() {
 
   useEffect(() => { void load(); }, [load]);
 
-  // Seed demo notifications on first load
+  // Seed a welcome notification only if the DB has never had any notifications
+  // Uses a meta flag to prevent re-seeding after clearUserData
   useEffect(() => {
     (async () => {
-      const count = await NotificationService.unreadCount();
-      if (count === 0 && notifs.length === 0) {
+      try {
+        const { query: dbQuery, run: dbRun } = await import("../../../database");
+        const seeded = await dbQuery<{ value: string }>(
+          "SELECT value FROM meta WHERE key = 'notif_seeded'"
+        );
+        if (seeded.length) return; // already seeded this device
         await NotificationService.createServerMessage(
-          "POS system updated",
-          "TheShop POS v2.4 is now running. All modules are online. Sync engine is active.",
+          "Welcome to TheShop",
+          "Your POS is ready. Add products in Inventory, then start billing.",
           "normal"
         );
-        await NotificationService.createServerMessage(
-          "Low stock alert",
-          "Basmati Rice (5 kg) has dropped below the reorder threshold. Current stock: 3 units.",
-          "high"
-        );
-        await NotificationService.createClientMessage(
-          "Day opening complete",
-          "Opening cash float of ₹1,000 recorded by Suresh at 8:00 AM. All systems OK."
-        );
+        await dbRun("INSERT OR IGNORE INTO meta (key, value) VALUES ('notif_seeded', '1')");
         await load();
-      }
+      } catch { /* ignore */ }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

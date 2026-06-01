@@ -67,10 +67,12 @@ export const CustomerService = {
   },
 
   async update(id: number, patch: Partial<CustomerDraft>): Promise<void> {
-    const fields = Object.entries(patch)
-      .map(([k]) => `${k} = ?`)
-      .join(", ");
-    const values = Object.values(patch);
+    // Whitelist allowed columns to prevent SQL injection via key names
+    const ALLOWED = ["name", "phone", "email", "address", "gst_number", "qr_token"];
+    const entries = Object.entries(patch).filter(([k]) => ALLOWED.includes(k));
+    if (!entries.length) return;
+    const fields = entries.map(([k]) => `${k} = ?`).join(", ");
+    const values = entries.map(([, v]) => v);
     await run(
       `UPDATE customers SET ${fields}, updatedAt = ? WHERE id = ?`,
       [...values, now(), id]

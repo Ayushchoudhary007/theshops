@@ -297,26 +297,42 @@ export class SyncEngine {
     const ts = new Date().toISOString();
     for (const item of items) {
       try {
-        await run(
-          `INSERT INTO inventory
-            (name, category, brand, price, stock, image, sku, barcode, status, lastUpdated, syncedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(sku) DO UPDATE SET
-             name=excluded.name, category=excluded.category, brand=excluded.brand,
-             price=excluded.price, stock=excluded.stock, image=excluded.image,
-             barcode=excluded.barcode, status=excluded.status,
-             lastUpdated=excluded.lastUpdated, syncedAt=excluded.syncedAt
-           WHERE excluded.lastUpdated > inventory.lastUpdated`,
-          [
-            item.name ?? "", item.category ?? "", item.brand ?? "",
-            item.price ?? 0, item.stock ?? 0, item.image ?? "",
-            item.sku ?? "", item.barcode ?? null,
-            item.status ?? "in-stock",
-            item.lastUpdated ?? item.last_updated ?? ts, ts,
-          ]
-        );
-      } catch {
-        // Skip conflicts
+        const sku = item.sku ?? "";
+        if (sku) {
+          // Has SKU — upsert by SKU, only overwrite if newer
+          await run(
+            `INSERT INTO inventory
+              (name, category, brand, price, stock, image, sku, barcode, status, lastUpdated, syncedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(sku) DO UPDATE SET
+               name=excluded.name, category=excluded.category, brand=excluded.brand,
+               price=excluded.price, stock=excluded.stock, image=excluded.image,
+               barcode=excluded.barcode, status=excluded.status,
+               lastUpdated=excluded.lastUpdated, syncedAt=excluded.syncedAt
+             WHERE excluded.lastUpdated > inventory.lastUpdated`,
+            [
+              item.name ?? "", item.category ?? "", item.brand ?? "",
+              item.price ?? 0, item.stock ?? 0, item.image ?? "",
+              sku, item.barcode ?? null, item.status ?? "in-stock",
+              item.lastUpdated ?? item.last_updated ?? ts, ts,
+            ]
+          );
+        } else {
+          // No SKU — match by name to avoid duplicates on re-sync
+          await run(
+            `INSERT OR IGNORE INTO inventory
+              (name, category, brand, price, stock, image, sku, barcode, status, lastUpdated, syncedAt)
+             VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
+            [
+              item.name ?? "", item.category ?? "", item.brand ?? "",
+              item.price ?? 0, item.stock ?? 0, item.image ?? "",
+              item.barcode ?? null, item.status ?? "in-stock",
+              item.lastUpdated ?? item.last_updated ?? ts, ts,
+            ]
+          );
+        }
+      } catch (e) {
+        console.warn("[sync] inventory item skipped:", item.name, (e as any)?.message);
       }
     }
 

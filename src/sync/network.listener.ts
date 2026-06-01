@@ -21,8 +21,9 @@ export class NetworkListener {
     window.addEventListener("online", this.handleOnline);
     window.addEventListener("offline", this.handleOffline);
 
-    // If already online, kick off an initial sync
-    if (navigator.onLine) {
+    // If already online AND user is logged in, kick off an initial sync
+    const token = localStorage.getItem("theshop_auth_token");
+    if (navigator.onLine && token && token !== "offline") {
       syncEngine.sync().catch(console.error);
     }
 

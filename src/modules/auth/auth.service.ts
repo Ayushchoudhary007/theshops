@@ -86,10 +86,19 @@ export const AuthService = {
 
     if (isOnline) {
       try {
-        const data = await serverFetch<ServerAuthResponse>("/api/auth/register/owner", {
-          name: form.name, email: form.email,
-          password: form.password, shopName: form.shopName,
+        const regRes = await fetch(`${SERVER_URL}/api/auth/register/owner`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: form.name, email: form.email, password: form.password, shopName: form.shopName }),
         });
+        if (regRes.status === 409) {
+          throw new Error("An account with this email already exists. Please sign in instead.");
+        }
+        if (!regRes.ok) {
+          const body = await regRes.json().catch(() => ({})) as any;
+          throw new Error(body.error ?? "Registration failed");
+        }
+        const data = await regRes.json() as ServerAuthResponse;
         const user: AuthUser = {
           ...data.user, token: data.token,
           linkedAt:    new Date().toISOString(),

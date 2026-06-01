@@ -94,5 +94,18 @@ export async function clearUserData(): Promise<void> {
   for (const k of syncKeys) {
     try { await run("DELETE FROM meta WHERE key = ?", [k]); } catch { /* ok */ }
   }
+  // Re-seed default meta values so app UI shows defaults before first sync
+  const defaults: [string, string][] = [
+    ["shop_name",    "My Shop"],
+    ["shop_address", ""],
+    ["shop_gst",     ""],
+    ["tax_rate",     "18"],
+    ["bill_counter", "1000"],
+  ];
+  for (const [k, v] of defaults) {
+    try {
+      await run("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)", [k, v]);
+    } catch { /* ok */ }
+  }
   console.log("[DB] User data cleared ✓");
 }

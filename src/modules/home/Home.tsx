@@ -1,11 +1,13 @@
 // ─────────────────────────────────────────────────────────────
 // src/modules/home/Home.tsx
 // ─────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { BRAND, FONT } from "../../design-tokens";
 import { InventoryService } from "../inventory/pages/inventory.service";
 import type { InventoryItem } from "../inventory/pages/inventory.types";
+import { BillingService } from "../billing/billing.service";
+import { syncEvents } from "../../sync/sync.engine.client";
 const HOME_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
@@ -149,26 +151,30 @@ const ACTIONS = [
 /* ── Component ───────────────────────────────────────────── */
 export default function Home() {
   const navigate = useNavigate();
-  const [items, setItems] = useState<InventoryItem[]>([]);
- // const [loading, setLoading] = useState(true);
+  const [items,      setItems]      = useState<InventoryItem[]>([]);
+  const [todaySales, setTodaySales] = useState({ count: 0, revenue: 0 });
 
-  // Fetch inventory items on mount
-  useEffect(() => {
-    const fetchItems = async () => {
-      try {
-        // setLoading(true);
-        const data = await InventoryService.getAll();
-        setItems(data);
-      } catch (error) {
-        console.error("Failed to fetch inventory items:", error);
-        setItems([]);
-      } finally {
-        // setLoading(false);
-      }
-    };
-
-    fetchItems();
+  const loadData = useCallback(async () => {
+    try {
+      const [inv, today] = await Promise.all([
+        InventoryService.getAll(),
+        BillingService.todayStats(),
+      ]);
+      setItems(inv);
+      setTodaySales(today);
+    } catch (e) {
+      console.error("Home load error:", e);
+    }
   }, []);
+
+  // Initial load
+  useEffect(() => { void loadData(); }, [loadData]);
+
+  // Refresh whenever sync completes so dashboard reflects new server data
+  useEffect(() => {
+    syncEvents.on("change", loadData);
+    return () => syncEvents.off("change", loadData);
+  }, [loadData]);
 
   // Calculate stats from items
   const stats = useMemo(
@@ -200,7 +206,7 @@ export default function Home() {
       value: stats.lowStock,
       accent: "#a16207",
     },
-    { icon: "🧾", label: "Today's Sales", value: "--", accent: "#8b5cf6" },
+    { icon: "🧾", label: "Today's Sales", value: `₹${todaySales.revenue.toLocaleString("en-IN")}`, accent: "#8b5cf6" },
   ];
 
   /* ── Recent activity (mock — replace with live data) ─────── */
@@ -237,20 +243,22 @@ export default function Home() {
   //   },
   // ];
 
-  /* ── Alerts (mock) ───────────────────────────────────────── */
+  // Real alerts from inventory
+  const lowStockItems  = items.filter(i => i.status === "low-stock");
+  const outOfStockItems = items.filter(i => i.status === "out-of-stock");
   const ALERTS = [
-    {
+    ...(lowStockItems.length > 0 ? [{
       icon: "⚠️",
-      text: "2 products are running low",
+      text: `${lowStockItems.length} product${lowStockItems.length > 1 ? "s" : ""} running low`,
       color: "#a16207",
       bg: "rgba(234,179,8,0.10)",
-    },
-    {
+    }] : []),
+    ...(outOfStockItems.length > 0 ? [{
       icon: "🚫",
-      text: "1 product is out of stock",
+      text: `${outOfStockItems.length} product${outOfStockItems.length > 1 ? "s" : ""} out of stock`,
       color: "#b91c1c",
       bg: "rgba(239,68,68,0.10)",
-    },
+    }] : []),
   ];
 
   const now = new Date();

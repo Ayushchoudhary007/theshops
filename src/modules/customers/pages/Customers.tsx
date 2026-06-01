@@ -95,26 +95,20 @@ export default function Customers() {
           justifyContent: "center", flexDirection: "column", gap: 4,
           padding: 12, position: "relative",
         }}>
-          {/* Corner squares */}
-          {[[0,0],[0,1],[1,0]].map(([t,r], i) => (
+          {/* QR corner finder squares — all 3 positions */}
+          {[
+            { top: 8,    left: 8    },
+            { top: 8,    right: 8   },
+            { bottom: 8, left: 8   },
+          ].map((pos, i) => (
             <div key={i} style={{
-              position: "absolute",
-              top:   t === 0 ? 8  : "auto",
-              bottom: t === 1 ? 8  : "auto",
-              left:  r === 0 ? 8  : "auto",
-              right: r === 1 ? 8  : "auto",
+              position: "absolute", ...pos,
               width: 32, height: 32,
               border: "4px solid #000", borderRadius: 4,
             }}>
               <div style={{ width: 16, height: 16, background: "#000", borderRadius: 2, margin: 4 }} />
             </div>
           ))}
-          <div style={{
-            width: 32, height: 32, position: "absolute", bottom: 8, right: 8,
-            border: "4px solid #000", borderRadius: 4,
-          }}>
-            <div style={{ width: 16, height: 16, background: "#000", borderRadius: 2, margin: 4 }} />
-          </div>
           <div style={{ fontSize: 28, marginTop: 12 }}>👤</div>
           <div style={{ fontSize: 11, fontWeight: 700, color: "#000" }}>{c.name}</div>
           <div style={{ fontSize: 9, color: "#555" }}>{c.phone}</div>

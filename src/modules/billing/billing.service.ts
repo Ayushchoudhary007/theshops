@@ -13,9 +13,11 @@ async function nextBillNumber(): Promise<string> {
     "SELECT value FROM meta WHERE key = 'bill_counter'"
   );
   const counter = parseInt(rows[0]?.value ?? "1000", 10) + 1;
-  await run("UPDATE meta SET value = ? WHERE key = 'bill_counter'", [
-    String(counter),
-  ]);
+  // Use INSERT OR REPLACE so it works even if the row doesn't exist yet
+  await run(
+    "INSERT OR REPLACE INTO meta (key, value) VALUES ('bill_counter', ?)",
+    [String(counter)]
+  );
   return `BILL-${counter}`;
 }
 

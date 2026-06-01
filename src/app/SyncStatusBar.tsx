@@ -4,7 +4,7 @@
 // Pulls state from the local SQLite sync_queue (via useSyncStatus)
 // and from the auth session (online/offline badge).
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { query } from "../database";
 import { syncEngine, syncEvents } from "../sync/sync.engine.client";
 import { useNetworkStatus } from "../hooks/useNetworkStatus";
@@ -42,15 +42,15 @@ export function SyncStatusBar() {
   const [summary,    setSummary]    = useState<SyncSummary>({ pending: 0, syncing: 0, failed: 0, lastSync: null });
   const [isSyncing,  setIsSyncing]  = useState(false);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     try { setSummary(await fetchSummary()); } catch { /* db not ready */ }
-  };
+  }, []);
 
   useEffect(() => {
-    refresh();
+    void refresh();
     syncEvents.on("change", refresh);
     return () => syncEvents.off("change", refresh);
-  }, []);
+  }, [refresh]);
 
   async function handleSyncNow() {
     setIsSyncing(true);

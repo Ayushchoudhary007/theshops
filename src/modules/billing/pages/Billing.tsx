@@ -370,18 +370,20 @@ export default function Billing() {
 
   function handleItemNameChange(val: string) {
     setIName(val);
-    // Clear previous debounce
+    setSelectedInvItem(null); // clear selection if user edits name manually
     if (invSearchRef.current) clearTimeout(invSearchRef.current);
     if (!val.trim()) { setInvSuggestions([]); return; }
-    // Debounce 150ms — fast but avoids hammering SQLite on every keystroke
     invSearchRef.current = setTimeout(() => void searchInventory(val), 150);
   }
+
+  // Track selected inventory item for inventory_id + sku when adding
+  const [selectedInvItem, setSelectedInvItem] = useState<InventoryItem | null>(null);
 
   function applyInventoryItem(item: InventoryItem) {
     setIName(item.name);
     setIPrice(item.price);
+    setSelectedInvItem(item);
     setInvSuggestions([]);
-    // Auto-focus qty field so user can adjust quantity
     setTimeout(() => priceRef.current?.focus(), 50);
   }
 
@@ -423,15 +425,23 @@ export default function Billing() {
 
   function addItem() {
     if (!iName.trim() || !iPrice) { showToast("Enter item name and price"); return; }
+    // Warn if selected inventory item is out of stock
+    if (selectedInvItem && selectedInvItem.stock < iQty) {
+      showToast(`⚠ Only ${selectedInvItem.stock} in stock`);
+    }
     setDraft(d => ({
       ...d,
       items: [...d.items, {
-        name: iName.trim(), sku: "", quantity: iQty,
-        unit_price: Number(iPrice), total_price: iQty * Number(iPrice),
-        inventory_id: null,
+        name:         iName.trim(),
+        sku:          selectedInvItem?.sku  ?? "",
+        quantity:     iQty,
+        unit_price:   Number(iPrice),
+        total_price:  iQty * Number(iPrice),
+        inventory_id: selectedInvItem?.id ?? null,
       }],
     }));
     setIName(""); setIQty(1); setIPrice("");
+    setSelectedInvItem(null);
     setInvSuggestions([]);
     setTimeout(() => nameRef.current?.focus(), 50);
   }
@@ -485,6 +495,7 @@ export default function Billing() {
     setShowPreview(false);
     setShowHistory(false);
     setInvSuggestions([]);
+    setSelectedInvItem(null);
     setIName(""); setIQty(1); setIPrice("");
   }
 
