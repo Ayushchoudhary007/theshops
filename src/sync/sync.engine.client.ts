@@ -299,13 +299,13 @@ export class SyncEngine {
       try {
         const sku = item.sku ?? "";
         if (sku) {
-          // Has SKU — upsert by SKU, only overwrite if newer
+          // Has SKU — upsert by (name, sku), only overwrite if newer
           await run(
             `INSERT INTO inventory
               (name, category, brand, price, stock, image, sku, barcode, status, lastUpdated, syncedAt)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(sku) DO UPDATE SET
-               name=excluded.name, category=excluded.category, brand=excluded.brand,
+             ON CONFLICT(name, sku) DO UPDATE SET
+               category=excluded.category, brand=excluded.brand,
                price=excluded.price, stock=excluded.stock, image=excluded.image,
                barcode=excluded.barcode, status=excluded.status,
                lastUpdated=excluded.lastUpdated, syncedAt=excluded.syncedAt
@@ -318,11 +318,17 @@ export class SyncEngine {
             ]
           );
         } else {
-          // No SKU — match by name to avoid duplicates on re-sync
+          // No SKU — upsert by name (treat name as unique when sku is empty)
           await run(
-            `INSERT OR IGNORE INTO inventory
+            `INSERT INTO inventory
               (name, category, brand, price, stock, image, sku, barcode, status, lastUpdated, syncedAt)
-             VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?)
+             ON CONFLICT(name, sku) DO UPDATE SET
+               category=excluded.category, brand=excluded.brand,
+               price=excluded.price, stock=excluded.stock, image=excluded.image,
+               barcode=excluded.barcode, status=excluded.status,
+               lastUpdated=excluded.lastUpdated, syncedAt=excluded.syncedAt
+             WHERE excluded.lastUpdated > inventory.lastUpdated`,
             [
               item.name ?? "", item.category ?? "", item.brand ?? "",
               item.price ?? 0, item.stock ?? 0, item.image ?? "",

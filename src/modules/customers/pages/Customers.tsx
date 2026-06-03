@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { BRAND, GLASS, RADIUS, COLOR, GLOBAL_STYLES } from "../../../design-tokens";
 import { CustomerService } from "../customers.service";
 import type { Customer, CustomerDraft, CustomerRow } from "../customers.types";
+import { query } from "../../../database";
+import type { Bill } from "../../billing/billing.types";
 
 const EMPTY_DRAFT = (): CustomerDraft => ({
   name: "", phone: "", email: "", address: "", gst_number: "", qr_token: null,
@@ -12,8 +14,9 @@ const EMPTY_DRAFT = (): CustomerDraft => ({
 type Modal =
   | { type: "none" }
   | { type: "add" }
-  | { type: "edit"; customer: Customer }
-  | { type: "qr"; customer: Customer };
+  | { type: "edit";     customer: Customer }
+  | { type: "qr";      customer: Customer }
+  | { type: "bills";   customer: Customer };
 
 function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -24,8 +27,10 @@ export default function Customers() {
   const [search,    setSearch]    = useState("");
   const [modal,     setModal]     = useState<Modal>({ type: "none" });
   const [draft,     setDraft]     = useState<CustomerDraft>(EMPTY_DRAFT());
-  const [saving,    setSaving]    = useState(false);
-  const [toast,     setToast]     = useState<string | null>(null);
+  const [saving,      setSaving]      = useState(false);
+  const [toast,       setToast]       = useState<string | null>(null);
+  const [custBills,   setCustBills]   = useState<Bill[]>([]);
+  const [billsLoading, setBillsLoading] = useState(false);
 
   const load = useCallback(async () => {
     const rows = await CustomerService.list();
@@ -131,62 +136,128 @@ export default function Customers() {
     );
   }
 
-  // ── Form modal ──────────────────────────────────────────────────────────────
-  function FormModal() {
-    const isEdit = modal.type === "edit";
-    return (
+  // ── Form modal (JSX variable — not a nested function component) ──
+  const isEdit = modal.type === "edit";
+  const FormModal = (modal.type === "add" || modal.type === "edit") ? (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 100,
+      background: "rgba(0,0,0,0.45)", display: "flex",
+      alignItems: "center", justifyContent: "center",
+    }}>
       <div style={{
-        position: "fixed", inset: 0, zIndex: 100,
-        background: "rgba(0,0,0,0.45)", display: "flex",
-        alignItems: "center", justifyContent: "center",
+        ...GLASS, borderRadius: RADIUS.card,
+        padding: 24, width: 420, maxWidth: "92vw",
+        display: "flex", flexDirection: "column", gap: 14,
       }}>
-        <div style={{
-          ...GLASS, borderRadius: RADIUS.card,
-          padding: 24, width: 420, maxWidth: "92vw",
-          display: "flex", flexDirection: "column", gap: 14,
-        }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, color: COLOR.text }}>
-              {isEdit ? "Edit Customer" : "Add Customer"}
-            </h3>
-            <button onClick={() => setModal({ type: "none" })} style={{ fontSize: 20, background: "none", border: "none", cursor: "pointer" }}>✕</button>
-          </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, color: COLOR.text }}>
+            {isEdit ? "Edit Customer" : "Add Customer"}
+          </h3>
+          <button onClick={() => setModal({ type: "none" })} style={{ fontSize: 20, background: "none", border: "none", cursor: "pointer" }}>✕</button>
+        </div>
 
-          {[
-            { label: "Name *",    key: "name",       type: "text"  },
-            { label: "Mobile",    key: "phone",      type: "tel"   },
-            { label: "Email",     key: "email",      type: "email" },
-            { label: "Address",   key: "address",    type: "text"  },
-            { label: "GST No.",   key: "gst_number", type: "text"  },
-          ].map(f => (
-            <div key={f.key}>
-              <div style={{ fontSize: 11, color: COLOR.textSoft, marginBottom: 4 }}>{f.label}</div>
-              <input
-                className="iv-input"
-                type={f.type}
-                value={(draft as any)[f.key]}
-                onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
-              />
-            </div>
-          ))}
-
-          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
-            <button className="iv-btn-ghost"   style={{ flex: 1 }} onClick={() => setModal({ type: "none" })}>Cancel</button>
-            <button className="iv-btn-primary" style={{ flex: 1 }} onClick={() => void handleSave()} disabled={saving}>
-              {saving ? "Saving…" : isEdit ? "Save changes" : "Add customer"}
-            </button>
+        {[
+          { label: "Name *",    key: "name",       type: "text"  },
+          { label: "Mobile",    key: "phone",      type: "tel"   },
+          { label: "Email",     key: "email",      type: "email" },
+          { label: "Address",   key: "address",    type: "text"  },
+          { label: "GST No.",   key: "gst_number", type: "text"  },
+        ].map(field => (
+          <div key={field.key}>
+            <div style={{ fontSize: 11, color: COLOR.textSoft, marginBottom: 4 }}>{field.label}</div>
+            <input
+              className="iv-input"
+              type={field.type}
+              value={(draft as any)[field.key]}
+              onChange={e => setDraft(d => ({ ...d, [field.key]: e.target.value }))}
+            />
           </div>
+        ))}
+
+        <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+          <button className="iv-btn-ghost"   style={{ flex: 1 }} onClick={() => setModal({ type: "none" })}>Cancel</button>
+          <button className="iv-btn-primary" style={{ flex: 1 }} onClick={() => void handleSave()} disabled={saving}>
+            {saving ? "Saving…" : isEdit ? "Save changes" : "Add customer"}
+          </button>
         </div>
       </div>
-    );
-  }
+    </div>
+  ) : null;
 
   return (
     <>
       <style>{GLOBAL_STYLES}</style>
       <style>{`.cust-card:hover { background: rgba(255,255,255,0.65) !important; }`}</style>
 
-      {(modal.type === "add" || modal.type === "edit") && <FormModal />}
+      {FormModal}
+
+      {modal.type === "bills" && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ ...GLASS, borderRadius: RADIUS.card, padding: 24, width: 500, maxWidth: "95vw", maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: COLOR.text, margin: 0 }}>
+                  {modal.customer.name}'s Bills
+                </h3>
+                <div style={{ fontSize: 12, color: COLOR.textSoft, marginTop: 2 }}>{modal.customer.phone}</div>
+              </div>
+              <button onClick={() => setModal({ type: "none" })} style={{ fontSize: 20, background: "none", border: "none", cursor: "pointer" }}>✕</button>
+            </div>
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {billsLoading ? (
+                <div style={{ textAlign: "center", padding: 32, color: COLOR.textSoft }}>Loading bills…</div>
+              ) : custBills.length === 0 ? (
+                <div style={{ textAlign: "center", padding: 32, color: COLOR.textSoft }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>🧾</div>
+                  <div>No bills for this customer yet</div>
+                </div>
+              ) : (
+                <>
+                  {/* Summary bar */}
+                  <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                    {[
+                      { l: "Total bills", v: custBills.length },
+                      { l: "Total spent", v: `₹${custBills.reduce((s, b) => s + b.total, 0).toLocaleString("en-IN")}` },
+                      { l: "Last visit",  v: new Date(custBills[0].createdAt).toLocaleDateString("en-IN") },
+                    ].map(s => (
+                      <div key={s.l} style={{ flex: 1, minWidth: 100, background: "rgba(255,255,255,0.45)", borderRadius: 10, padding: "8px 12px" }}>
+                        <div style={{ fontSize: 10, color: COLOR.textSoft }}>{s.l}</div>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: COLOR.text }}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Bill list */}
+                  {custBills.map(b => (
+                    <div key={b.id} style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      padding: "10px 14px", borderRadius: 10, marginBottom: 6,
+                      background: "rgba(255,255,255,0.50)", border: "1px solid rgba(255,255,255,0.65)",
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: COLOR.text }}>{b.bill_number}</div>
+                        <div style={{ fontSize: 11, color: COLOR.textSoft }}>
+                          {new Date(b.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                          {" · "}{b.payment_mode.toUpperCase()}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: BRAND }}>₹{b.total.toFixed(2)}</div>
+                        <span style={{
+                          fontSize: 9, padding: "2px 7px", borderRadius: 99,
+                          background: b.status === "paid" ? "rgba(34,197,94,.12)" : "rgba(239,68,68,.12)",
+                          color: b.status === "paid" ? "#15803d" : "#b91c1c",
+                          fontWeight: 700, textTransform: "uppercase",
+                        }}>{b.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <button className="iv-btn-ghost" style={{ width: "100%", marginTop: 14 }} onClick={() => setModal({ type: "none" })}>Close</button>
+          </div>
+        </div>
+      )}
 
       {modal.type === "qr" && (
         <div style={{
@@ -300,6 +371,11 @@ export default function Customers() {
                 <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
                   <button className="iv-btn-ghost"  style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} onClick={() => openEdit(c as unknown as Customer)}>Edit</button>
                   <button className="iv-btn-ghost"  style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} onClick={() => setModal({ type: "qr", customer: c as unknown as Customer })}>QR</button>
+                  <button className="iv-btn-ghost"  style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} onClick={() => {
+                    const cust = c as unknown as Customer;
+                    setModal({ type: "bills", customer: cust });
+                    void loadCustomerBills(cust.id);
+                  }}>🧾 Bills</button>
                   <button className="iv-btn-danger" style={{ flex: 1, fontSize: 12, padding: "6px 10px" }} onClick={() => void handleDelete(c as unknown as Customer)}>Delete</button>
                 </div>
               </div>

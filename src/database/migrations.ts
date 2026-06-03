@@ -1,6 +1,4 @@
-// ─────────────────────────────────────────────────────────────
-// src/database/migrations.ts  (UPDATED)
-// ─────────────────────────────────────────────────────────────
+// src/database/migrations.ts
 
 import { query, run } from "./index";
 
@@ -10,18 +8,12 @@ interface Migration {
 }
 
 const MIGRATIONS: Migration[] = [
-  {
-    version: 1,
-    up: [], // baseline handled by schema.ts CREATE_TABLES
-  },
-  {
-    version: 2,
-    up: [], // reserved
-  },
+  { version: 1, up: [] }, // baseline — handled by schema.ts CREATE_TABLES
+  { version: 2, up: [] }, // reserved
   {
     version: 3,
     up: [
-      // Add new tables for existing DBs upgrading from v1/v2
+      // Add tables for existing DBs upgrading from v1/v2
       `CREATE TABLE IF NOT EXISTS customers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
@@ -77,6 +69,34 @@ const MIGRATIONS: Migration[] = [
       `INSERT OR IGNORE INTO meta (key, value) VALUES ('shop_gst',     '')`,
       `INSERT OR IGNORE INTO meta (key, value) VALUES ('shop_address', '')`,
       `INSERT OR IGNORE INTO meta (key, value) VALUES ('tax_rate',     '18')`,
+    ],
+  },
+  {
+    version: 4,
+    up: [
+      // Add UNIQUE(name, sku) to inventory so ON CONFLICT upsert works during sync.
+      // SQLite cannot add UNIQUE constraints with ALTER TABLE — must recreate the table.
+      `CREATE TABLE IF NOT EXISTS inventory_v4 (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        name        TEXT    NOT NULL,
+        category    TEXT    NOT NULL DEFAULT '',
+        brand       TEXT    NOT NULL DEFAULT '',
+        price       REAL    NOT NULL DEFAULT 0,
+        stock       INTEGER NOT NULL DEFAULT 0,
+        image       TEXT    NOT NULL DEFAULT '',
+        sku         TEXT    NOT NULL DEFAULT '',
+        barcode     TEXT,
+        status      TEXT    NOT NULL DEFAULT 'in-stock',
+        lastUpdated TEXT    NOT NULL,
+        syncedAt    TEXT,
+        UNIQUE(name, sku)
+      )`,
+      `INSERT OR IGNORE INTO inventory_v4
+         SELECT id,name,category,brand,price,stock,image,sku,
+                barcode,status,lastUpdated,syncedAt
+         FROM inventory`,
+      `DROP TABLE IF EXISTS inventory`,
+      `ALTER TABLE inventory_v4 RENAME TO inventory`,
     ],
   },
 ];

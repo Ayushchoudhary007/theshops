@@ -18,7 +18,8 @@ export const CREATE_TABLES = `
     barcode     TEXT,
     status      TEXT    NOT NULL DEFAULT 'in-stock',
     lastUpdated TEXT    NOT NULL,
-    syncedAt    TEXT
+    syncedAt    TEXT,
+    UNIQUE(name, sku)
   );
 
   -- Outbound sync queue
