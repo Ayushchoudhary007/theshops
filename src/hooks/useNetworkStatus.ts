@@ -14,8 +14,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import type { NetworkState} from "../sync/offline.types";
 
 const PING_URL     = `${import.meta.env.VITE_API_URL ?? "https://api.theshop.app"}/api/ping`;
-const PING_TIMEOUT = 5_000;  // ms
-const PING_INTERVAL = 30_000; // re-check every 30 s while "online"
+const PING_TIMEOUT = 20_000; // ms — Railway free tier needs ~15s to wake from sleep
+const PING_INTERVAL_ONLINE  = 30_000; // re-check every 30s while connected
+const PING_INTERVAL_OFFLINE = 15_000; // re-check every 15s while disconnected (faster recovery)
 
 // ── Module-level subscribers (shared across hook instances) ──
 type Listener = (state: NetworkState) => void;
@@ -63,7 +64,20 @@ async function checkAndBroadcast(): Promise<void> {
   }
 
   // Verify with a real ping (catches captive portals, LAN-only, etc.)
-  const ping = await pingServer();
+  // Broadcast "checking" so UI shows spinner rather than "unreachable"
+  if (currentState.status !== "online") {
+    broadcast({ ...currentState, status: "checking" });
+  }
+
+  let ping = await pingServer();
+
+  // Railway free tier can take up to 15s to wake from sleep.
+  // If the first ping times out but browser is online, retry once.
+  if (ping === null && navigator.onLine) {
+    await new Promise(r => setTimeout(r, 5_000)); // wait 5s for server to wake
+    ping = await pingServer();
+  }
+
   const isOnline = ping !== null;
   const prevOnline = currentState.isOnline;
 
@@ -91,10 +105,16 @@ async function startNetworkMonitor() {
   window.addEventListener("online",  () => checkAndBroadcast());
   window.addEventListener("offline", () => checkAndBroadcast());
 
-  // Periodic re-ping while "online" to catch silent disconnections
-  pingTimer = setInterval(async () => {
-    if (currentState.isOnline) await checkAndBroadcast();
-  }, PING_INTERVAL);
+  // Periodic re-ping — faster when offline so we recover quickly from Railway sleep
+  function schedulePing() {
+    if (pingTimer) clearInterval(pingTimer);
+    const interval = currentState.isOnline ? PING_INTERVAL_ONLINE : PING_INTERVAL_OFFLINE;
+    pingTimer = setInterval(async () => {
+      await checkAndBroadcast();
+      schedulePing(); // reschedule with updated interval based on new state
+    }, interval);
+  }
+  schedulePing();
 
   // Capacitor native (no-op if not in Capacitor context)
   try {

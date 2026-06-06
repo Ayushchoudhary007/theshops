@@ -1,7 +1,4 @@
 // src/modules/reports/pages/Reports.tsx
-//
-// When online + logged in: fetches server-side analytics (cross-device accurate).
-// When offline: falls back to local SQLite queries via BillingService.
 
 import { useState, useEffect, useCallback } from "react";
 import { BRAND, GLASS, RADIUS, COLOR, GLOBAL_STYLES } from "../../../design-tokens";
@@ -27,6 +24,72 @@ const PAYMODE_COLORS: Record<string, string> = {
   card: "#854F0B",
 };
 
+// ── BarChart — TOP-LEVEL component (not nested) ───────────────
+function BarChart({ data, height = 120 }: { data: DayRevenue[]; height?: number }) {
+  if (!data.length) return (
+    <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: COLOR.textFaint, fontSize: 13 }}>
+      No data for this period
+    </div>
+  );
+  const max     = Math.max(...data.map(d => d.revenue), 1);
+  const visible = data.slice(-28);
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height, paddingBottom: 20 }}>
+      {visible.map((d, i) => {
+        const h     = Math.max((d.revenue / max) * (height - 28), 2);
+        const label = d.date.slice(5);
+        return (
+          <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+            <div
+              title={`${d.date}: ₹${d.revenue.toFixed(0)} (${d.count} bills)`}
+              style={{ width: "100%", height: h, background: BRAND, borderRadius: "3px 3px 0 0", opacity: 0.8, cursor: "default", transition: "opacity 0.15s" }}
+              onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+              onMouseLeave={e => (e.currentTarget.style.opacity = "0.8")}
+            />
+            {visible.length <= 14 && (
+              <div style={{ fontSize: 8, color: COLOR.textFaint, transform: "rotate(-30deg)", transformOrigin: "top center", whiteSpace: "nowrap" }}>
+                {label}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── PaymentBar — TOP-LEVEL component (not nested) ─────────────
+function PaymentBar({ payModes }: { payModes: PayMode[] }) {
+  const total = payModes.reduce((s, p) => s + Number(p.total), 0) || 1;
+  return (
+    <div>
+      <div style={{ display: "flex", height: 18, borderRadius: 9, overflow: "hidden", marginBottom: 10 }}>
+        {payModes.map(pm => (
+          <div key={pm.payment_mode} style={{
+            flex: Number(pm.total) / total,
+            background: PAYMODE_COLORS[pm.payment_mode] ?? "#888",
+            minWidth: Number(pm.total) > 0 ? 4 : 0,
+          }} />
+        ))}
+      </div>
+      {payModes.map(pm => (
+        <div key={pm.payment_mode} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, color: COLOR.text, marginBottom: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 2, background: PAYMODE_COLORS[pm.payment_mode] ?? "#888" }} />
+            <span style={{ textTransform: "capitalize" }}>{pm.payment_mode}</span>
+            <span style={{ fontSize: 11, color: COLOR.textFaint }}>({pm.count} bills)</span>
+          </div>
+          <span style={{ fontWeight: 600 }}>₹{Number(pm.total).toLocaleString("en-IN")}</span>
+        </div>
+      ))}
+      {payModes.length === 0 && (
+        <div style={{ fontSize: 13, color: COLOR.textFaint, textAlign: "center", padding: "10px 0" }}>No data</div>
+      )}
+    </div>
+  );
+}
+
+// ── Reports page ──────────────────────────────────────────────
 export default function Reports() {
   const auth = useAuth();
   const { isOnline } = useNetworkStatus();
@@ -92,63 +155,6 @@ export default function Reports() {
   const maxRevenue   = Math.max(...dailyRev.map(d => d.revenue), 1);
   const bestDay      = [...dailyRev].sort((a, b) => b.revenue - a.revenue)[0];
 
-  function BarChart({ data, height = 120 }: { data: DayRevenue[]; height?: number }) {
-    if (!data.length) return (
-      <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: COLOR.textFaint, fontSize: 13 }}>
-        No data for this period
-      </div>
-    );
-    const max     = Math.max(...data.map(d => d.revenue), 1);
-    const visible = data.slice(-28);
-    return (
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height, paddingBottom: 20 }}>
-        {visible.map((d, i) => {
-          const h     = Math.max((d.revenue / max) * (height - 28), 2);
-          const label = d.date.slice(5);
-          return (
-            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <div
-                title={`${d.date}: ₹${d.revenue.toFixed(0)} (${d.count} bills)`}
-                style={{ width: "100%", height: h, background: BRAND, borderRadius: "3px 3px 0 0", opacity: 0.8, cursor: "default", transition: "opacity 0.15s" }}
-                onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
-                onMouseLeave={e => (e.currentTarget.style.opacity = "0.8")}
-              />
-              {visible.length <= 14 && (
-                <div style={{ fontSize: 8, color: COLOR.textFaint, transform: "rotate(-30deg)", transformOrigin: "top center", whiteSpace: "nowrap" }}>
-                  {label}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    );
-  }
-
-  function PaymentBar() {
-    const total = payModes.reduce((s, p) => s + Number(p.total), 0) || 1;
-    return (
-      <div>
-        <div style={{ display: "flex", height: 18, borderRadius: 9, overflow: "hidden", marginBottom: 10 }}>
-          {payModes.map(pm => (
-            <div key={pm.payment_mode} style={{ flex: Number(pm.total) / total, background: PAYMODE_COLORS[pm.payment_mode] ?? "#888", minWidth: Number(pm.total) > 0 ? 4 : 0 }} />
-          ))}
-        </div>
-        {payModes.map(pm => (
-          <div key={pm.payment_mode} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 13, color: COLOR.text, marginBottom: 6 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: PAYMODE_COLORS[pm.payment_mode] ?? "#888" }} />
-              <span style={{ textTransform: "capitalize" }}>{pm.payment_mode}</span>
-              <span style={{ fontSize: 11, color: COLOR.textFaint }}>({pm.count} bills)</span>
-            </div>
-            <span style={{ fontWeight: 600 }}>₹{Number(pm.total).toLocaleString("en-IN")}</span>
-          </div>
-        ))}
-        {payModes.length === 0 && <div style={{ fontSize: 13, color: COLOR.textFaint, textAlign: "center", padding: "10px 0" }}>No data</div>}
-      </div>
-    );
-  }
-
   return (
     <>
       <style>{GLOBAL_STYLES}</style>
@@ -165,16 +171,13 @@ export default function Reports() {
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {PERIOD_OPTIONS.map(opt => (
-              <button
-                key={opt.days}
-                onClick={() => setPeriod(opt.days)}
-                style={{
-                  fontSize: 12, fontWeight: 500, padding: "7px 14px", borderRadius: RADIUS.pill, cursor: "pointer", fontFamily: "'Inter', sans-serif",
-                  border: period === opt.days ? `2px solid ${BRAND}` : "1px solid rgba(255,255,255,0.65)",
-                  background: period === opt.days ? "rgba(192,57,43,0.10)" : "rgba(255,255,255,0.45)",
-                  color: period === opt.days ? BRAND : COLOR.textMid,
-                }}
-              >
+              <button key={opt.days} onClick={() => setPeriod(opt.days)} style={{
+                fontSize: 12, fontWeight: 500, padding: "7px 14px", borderRadius: RADIUS.pill,
+                cursor: "pointer", fontFamily: "'Inter', sans-serif",
+                border: period === opt.days ? `2px solid ${BRAND}` : "1px solid rgba(255,255,255,0.65)",
+                background: period === opt.days ? "rgba(192,57,43,0.10)" : "rgba(255,255,255,0.45)",
+                color: period === opt.days ? BRAND : COLOR.textMid,
+              }}>
                 {opt.label}
               </button>
             ))}
@@ -244,7 +247,7 @@ export default function Reports() {
               {/* Payment modes */}
               <div style={{ ...GLASS, borderRadius: RADIUS.card, padding: "20px 24px" }}>
                 <h2 style={{ fontSize: 15, fontWeight: 700, color: COLOR.text, marginBottom: 14 }}>Payment Modes</h2>
-                <PaymentBar />
+                <PaymentBar payModes={payModes} />
               </div>
 
               {/* Period summary */}

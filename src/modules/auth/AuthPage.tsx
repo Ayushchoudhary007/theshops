@@ -236,10 +236,21 @@ export default function AuthPage() {
   useEffect(() => {
     if (!isOnline) { setSrvStatus("err"); return; }
     setSrvStatus("chk"); setSrvInfo(null);
-    AuthService.ping().then(r => {
-      setSrvStatus(r.ok ? "ok" : "err");
-      if (r.ok) setSrvInfo({ version: r.version, latency: r.latency });
-    });
+    // Railway free tier may take ~15s to wake — retry up to 3 times
+    let attempts = 0;
+    const tryPing = async () => {
+      const r = await AuthService.ping();
+      if (r.ok) {
+        setSrvStatus("ok");
+        setSrvInfo({ version: r.version, latency: r.latency });
+      } else if (attempts < 3) {
+        attempts++;
+        setTimeout(() => void tryPing(), 8000); // retry after 8s
+      } else {
+        setSrvStatus("err");
+      }
+    };
+    void tryPing();
   }, [isOnline]);
 
   const handleCachedSelect = useCallback((email: string) => {
@@ -347,9 +358,9 @@ export default function AuthPage() {
               {isOnline && srvStatus !== "idle" && (
                 <span className={`srv-pill ${srvStatus}`}>
                   <span className="dot" />
-                  {srvStatus === "chk" && "Checking…"}
+                  {srvStatus === "chk" && "Connecting…"}
                   {srvStatus === "ok"  && `Server OK${srvInfo?.latency ? ` · ${srvInfo.latency}ms` : ""}${srvInfo?.version ? ` · v${srvInfo.version}` : ""}`}
-                  {srvStatus === "err" && "Server unreachable"}
+                  {srvStatus === "err" && "Server starting up — retrying…"}
                 </span>
               )}
             </div>
