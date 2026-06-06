@@ -22,6 +22,48 @@ function initials(name: string) {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
+// ── QR display — top-level component (not nested) ────────────
+function QrModal({ c }: { c: Customer }) {
+  const payload = JSON.stringify({ name: c.name, phone: c.phone });
+  return (
+    <div style={{ textAlign: "center", padding: 8 }}>
+      <div style={{ fontSize: 12, color: COLOR.textSoft, marginBottom: 12 }}>
+        Customer QR payload
+      </div>
+      <div style={{
+        width: 200, height: 200, margin: "0 auto 12px",
+        background: "#fff", border: "3px solid #000",
+        borderRadius: 8, display: "flex", alignItems: "center",
+        justifyContent: "center", flexDirection: "column", gap: 4,
+        padding: 12, position: "relative",
+      }}>
+        {[
+          { top: 8,    left: 8  },
+          { top: 8,    right: 8 },
+          { bottom: 8, left: 8  },
+        ].map((pos, i) => (
+          <div key={i} style={{ position: "absolute", ...pos, width: 32, height: 32, border: "4px solid #000", borderRadius: 4 }}>
+            <div style={{ width: 16, height: 16, background: "#000", borderRadius: 2, margin: 4 }} />
+          </div>
+        ))}
+        <div style={{ fontSize: 28, marginTop: 12 }}>👤</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#000" }}>{c.name}</div>
+        <div style={{ fontSize: 9, color: "#555" }}>{c.phone}</div>
+      </div>
+      <div style={{ background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: "8px 12px", fontSize: 11, fontFamily: "monospace", wordBreak: "break-all", color: COLOR.textMid, marginBottom: 8 }}>
+        {payload}
+      </div>
+      <div style={{ fontSize: 11, color: COLOR.textSoft }}>
+        Token: <code style={{ color: BRAND }}>{c.qr_token}</code>
+      </div>
+      <div style={{ fontSize: 11, color: COLOR.textFaint, marginTop: 6 }}>
+        Print this QR and give to the customer.<br />
+        Scanner will auto-fill name + mobile.
+      </div>
+    </div>
+  );
+}
+
 export default function Customers() {
   const [customers, setCustomers] = useState<CustomerRow[]>([]);
   const [search,    setSearch]    = useState("");
@@ -38,6 +80,21 @@ export default function Customers() {
   }, []);
 
   useEffect(() => { void load(); }, [load]);
+
+  const loadCustomerBills = useCallback(async (customerId: number) => {
+    setBillsLoading(true);
+    try {
+      const bills = await query<import("../../billing/billing.types").Bill>(
+        "SELECT * FROM bills WHERE customer_id = ? ORDER BY createdAt DESC LIMIT 50",
+        [customerId]
+      );
+      setCustBills(bills);
+    } catch {
+      setCustBills([]);
+    } finally {
+      setBillsLoading(false);
+    }
+  }, []);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -82,59 +139,6 @@ export default function Customers() {
   const filtered = customers.filter(c =>
     !search || c.name.toLowerCase().includes(search.toLowerCase()) || c.phone.includes(search)
   );
-
-  // ── QR display ──────────────────────────────────────────────────────────────
-  function QrModal({ c }: { c: Customer }) {
-    // Generate a simple QR-like display with the token
-    const payload = JSON.stringify({ name: c.name, phone: c.phone });
-    return (
-      <div style={{ textAlign: "center", padding: 8 }}>
-        <div style={{ fontSize: 12, color: COLOR.textSoft, marginBottom: 12 }}>
-          Customer QR payload
-        </div>
-        {/* Visual QR placeholder — in production use a qrcode library */}
-        <div style={{
-          width: 200, height: 200, margin: "0 auto 12px",
-          background: "#fff", border: "3px solid #000",
-          borderRadius: 8, display: "flex", alignItems: "center",
-          justifyContent: "center", flexDirection: "column", gap: 4,
-          padding: 12, position: "relative",
-        }}>
-          {/* QR corner finder squares — all 3 positions */}
-          {[
-            { top: 8,    left: 8    },
-            { top: 8,    right: 8   },
-            { bottom: 8, left: 8   },
-          ].map((pos, i) => (
-            <div key={i} style={{
-              position: "absolute", ...pos,
-              width: 32, height: 32,
-              border: "4px solid #000", borderRadius: 4,
-            }}>
-              <div style={{ width: 16, height: 16, background: "#000", borderRadius: 2, margin: 4 }} />
-            </div>
-          ))}
-          <div style={{ fontSize: 28, marginTop: 12 }}>👤</div>
-          <div style={{ fontSize: 11, fontWeight: 700, color: "#000" }}>{c.name}</div>
-          <div style={{ fontSize: 9, color: "#555" }}>{c.phone}</div>
-        </div>
-        <div style={{
-          background: "rgba(0,0,0,0.05)", borderRadius: 8, padding: "8px 12px",
-          fontSize: 11, fontFamily: "monospace", wordBreak: "break-all", color: COLOR.textMid,
-          marginBottom: 8,
-        }}>
-          {payload}
-        </div>
-        <div style={{ fontSize: 11, color: COLOR.textSoft }}>
-          Token: <code style={{ color: BRAND }}>{c.qr_token}</code>
-        </div>
-        <div style={{ fontSize: 11, color: COLOR.textFaint, marginTop: 6 }}>
-          Print this QR and give to the customer.<br />
-          Scanner will auto-fill name + mobile.
-        </div>
-      </div>
-    );
-  }
 
   // ── Form modal (JSX variable — not a nested function component) ──
   const isEdit = modal.type === "edit";

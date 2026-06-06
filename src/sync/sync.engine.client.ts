@@ -142,6 +142,7 @@ export class SyncEngine {
       await this.pullInventory(shopId);
       await this.pushCustomers(shopId);
       await this.pushNotifications(shopId);
+      await this.pullNotifications(shopId);
       await setMeta("last_sync_at", new Date().toISOString());
       syncEvents.emit("change");
     } catch (e) {
@@ -314,7 +315,7 @@ export class SyncEngine {
               item.name ?? "", item.category ?? "", item.brand ?? "",
               item.price ?? 0, item.stock ?? 0, item.image ?? "",
               sku, item.barcode ?? null, item.status ?? "in-stock",
-              item.lastUpdated ?? item.last_updated ?? ts, ts,
+              item.lastUpdated ?? item.last_updated ?? item.updatedAt ?? item.updated_at ?? ts, ts,
             ]
           );
         } else {
@@ -333,7 +334,7 @@ export class SyncEngine {
               item.name ?? "", item.category ?? "", item.brand ?? "",
               item.price ?? 0, item.stock ?? 0, item.image ?? "",
               item.barcode ?? null, item.status ?? "in-stock",
-              item.lastUpdated ?? item.last_updated ?? ts, ts,
+              item.lastUpdated ?? item.last_updated ?? item.updatedAt ?? item.updated_at ?? ts, ts,
             ]
           );
         }
@@ -380,6 +381,35 @@ export class SyncEngine {
       method: "POST",
       body: JSON.stringify({ shopId, notifications }),
     });
+  }
+
+  // ── Pull notifications from server → local ────────────────
+
+  private async pullNotifications(shopId: string): Promise<void> {
+    const { data: items, error } = await apiFetch<any[]>(
+      `/api/sync/notifications?shopId=${shopId}&unreadOnly=false`
+    );
+    if (error || !items?.length) return;
+
+    for (const n of items) {
+      try {
+        await run(
+          `INSERT OR IGNORE INTO notifications
+            (type, title, body, bill_id, is_read, priority, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            n.type ?? "server",
+            n.title ?? "",
+            n.body ?? "",
+            n.bill_id ?? n.billId ?? null,
+            n.is_read ?? n.isRead ?? 0,
+            n.priority ?? "normal",
+            n.createdAt ?? n.created_at ?? new Date().toISOString(),
+          ]
+        );
+      } catch { /* already exists */ }
+    }
+    syncEvents.emit("change");
   }
 }
 
