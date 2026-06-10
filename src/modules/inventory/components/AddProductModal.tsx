@@ -27,6 +27,7 @@ const EMPTY: FormData = {
   sku: "",
   barcode: "",
   lastUpdated: "",
+  reorder_level: 10,
 };
 
 const ADD_CSS = `
@@ -298,6 +299,29 @@ export default function AddProductModal({ onClose, onSuccess }: Props) {
               onChange={(e) => set("sku", e.target.value)}
               placeholder="SKU-0001"
             />
+          </div>
+
+          <div className="iv-two-col">
+            <div className="iv-field">
+              <label>Reorder Level</label>
+              <input
+                className="iv-input"
+                type="number"
+                min={0}
+                value={form.reorder_level ?? 10}
+                onChange={(e) => set("reorder_level", Number(e.target.value))}
+                title="Alert when stock drops below this number"
+              />
+            </div>
+            <div className="iv-field">
+              <label>Barcode (EAN/UPC)</label>
+              <input
+                className="iv-input"
+                value={form.barcode ?? ""}
+                onChange={(e) => set("barcode", e.target.value)}
+                placeholder="Scan or type"
+              />
+            </div>
           </div>
 
           <div className="iv-field">

@@ -142,7 +142,6 @@ export class SyncEngine {
       await this.pullInventory(shopId);
       await this.pushCustomers(shopId);
       await this.pushNotifications(shopId);
-      await this.pullNotifications(shopId);
       await setMeta("last_sync_at", new Date().toISOString());
       syncEvents.emit("change");
     } catch (e) {
@@ -315,7 +314,7 @@ export class SyncEngine {
               item.name ?? "", item.category ?? "", item.brand ?? "",
               item.price ?? 0, item.stock ?? 0, item.image ?? "",
               sku, item.barcode ?? null, item.status ?? "in-stock",
-              item.lastUpdated ?? item.last_updated ?? item.updatedAt ?? item.updated_at ?? ts, ts,
+              item.lastUpdated ?? item.last_updated ?? ts, ts,
             ]
           );
         } else {
@@ -334,7 +333,7 @@ export class SyncEngine {
               item.name ?? "", item.category ?? "", item.brand ?? "",
               item.price ?? 0, item.stock ?? 0, item.image ?? "",
               item.barcode ?? null, item.status ?? "in-stock",
-              item.lastUpdated ?? item.last_updated ?? item.updatedAt ?? item.updated_at ?? ts, ts,
+              item.lastUpdated ?? item.last_updated ?? ts, ts,
             ]
           );
         }
@@ -369,6 +368,80 @@ export class SyncEngine {
     }
   }
 
+  // ── Pull managers + staff from server → local SubAccountStore ──
+
+  private async pullSubAccounts(): Promise<void> {
+    const token = getToken();
+    if (!token || token === "offline") return;
+
+    // Only pull for owner role (managers/staff don't manage sub-accounts)
+    const raw = localStorage.getItem("theshop_auth_user");
+    if (!raw) return;
+    const user = JSON.parse(raw);
+    if (user?.role !== "owner") return;
+
+    try {
+      const { SubAccountStore } = await import("../modules/auth/auth.storage");
+
+      // Pull managers
+      const { data: managers } = await apiFetch<any[]>("/api/sub-accounts/managers");
+      if (managers?.length) {
+        for (const m of managers) {
+          const existing = SubAccountStore.getAll().find(a => a.serverId === m.id || a.email === m.email);
+          if (!existing) {
+            SubAccountStore.upsert({
+              localId:     m.id,
+              serverId:    m.id,
+              role:        "manager",
+              name:        m.name,
+              email:       m.email,
+              passwordHash: "",
+              shopIds:     m.shopIds ?? [],
+              shopId:      m.shopIds?.[0] ?? "",
+              permissions: m.permissions ?? [],
+              active:      m.active ?? true,
+              ownerId:     user.id,
+              syncStatus:  "synced",
+              createdAt:   m.createdAt ?? new Date().toISOString(),
+              syncedAt:    new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      // Pull staff for each shop
+      const shopIds = user.shops?.map((s: any) => s.id) ?? [];
+      for (const shopId of shopIds) {
+        const { data: staffList } = await apiFetch<any[]>(`/api/sub-accounts/staff?shopId=${shopId}`);
+        if (staffList?.length) {
+          for (const s of staffList) {
+            const existing = SubAccountStore.getAll().find(a => a.serverId === s.id || a.email === s.email);
+            if (!existing) {
+              SubAccountStore.upsert({
+                localId:      s.id,
+                serverId:     s.id,
+                role:         "staff",
+                name:         s.name,
+                email:        s.email,
+                passwordHash: "",
+                shopId:       s.shopId,
+                shopIds:      [s.shopId],
+                permissions:  s.permissions ?? [],
+                active:       s.active ?? true,
+                ownerId:      user.id,
+                syncStatus:   "synced",
+                createdAt:    s.createdAt ?? new Date().toISOString(),
+                syncedAt:     new Date().toISOString(),
+              });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("[sync] pullSubAccounts failed:", (e as any)?.message);
+    }
+  }
+
   // ── Push local notifications → server ────────────────────
 
   private async pushNotifications(shopId: string): Promise<void> {
@@ -381,35 +454,6 @@ export class SyncEngine {
       method: "POST",
       body: JSON.stringify({ shopId, notifications }),
     });
-  }
-
-  // ── Pull notifications from server → local ────────────────
-
-  private async pullNotifications(shopId: string): Promise<void> {
-    const { data: items, error } = await apiFetch<any[]>(
-      `/api/sync/notifications?shopId=${shopId}&unreadOnly=false`
-    );
-    if (error || !items?.length) return;
-
-    for (const n of items) {
-      try {
-        await run(
-          `INSERT OR IGNORE INTO notifications
-            (type, title, body, bill_id, is_read, priority, createdAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          [
-            n.type ?? "server",
-            n.title ?? "",
-            n.body ?? "",
-            n.bill_id ?? n.billId ?? null,
-            n.is_read ?? n.isRead ?? 0,
-            n.priority ?? "normal",
-            n.createdAt ?? n.created_at ?? new Date().toISOString(),
-          ]
-        );
-      } catch { /* already exists */ }
-    }
-    syncEvents.emit("change");
   }
 }
 

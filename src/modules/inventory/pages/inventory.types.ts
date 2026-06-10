@@ -15,8 +15,9 @@ export interface InventoryItem {
   sku: string;
   barcode?: string;         // EAN / UPC from scanner
   status: InventoryStatus;
-  lastUpdated: string;      // ISO date string
-  syncedAt?: string | null; // null = pending sync
+  lastUpdated:   string;       // ISO date string
+  syncedAt?:     string | null; // null = pending sync
+  reorder_level?: number;       // stock below this triggers an alert (default 10)
 }
 
 export type ViewMode = "grid" | "list";

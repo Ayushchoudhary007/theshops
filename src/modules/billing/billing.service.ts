@@ -119,10 +119,28 @@ export const BillingService = {
       if (item.inventory_id) {
         await run(
           `UPDATE inventory
-           SET stock = MAX(0, stock - ?), lastUpdated = ?
+           SET stock = MAX(0, stock - ?),
+               status = CASE
+                 WHEN MAX(0, stock - ?) = 0         THEN 'out-of-stock'
+                 WHEN MAX(0, stock - ?) < reorder_level THEN 'low-stock'
+                 ELSE 'in-stock'
+               END,
+               lastUpdated = ?
            WHERE id = ?`,
-          [item.quantity, ts, item.inventory_id]
+          [item.quantity, item.quantity, item.quantity, ts, item.inventory_id]
         );
+        // Create low-stock / out-of-stock alert notification
+        const updated = await query<{ name: string; stock: number; status: string }>(
+          "SELECT name, stock, status FROM inventory WHERE id = ?",
+          [item.inventory_id]
+        );
+        if (updated[0] && updated[0].status !== "in-stock") {
+          const isOut = updated[0].status === "out-of-stock";
+          await NotificationService.createAlert(
+            isOut ? "Out of stock" : "Low stock",
+            `${updated[0].name} has ${updated[0].stock} unit${updated[0].stock !== 1 ? "s" : ""} remaining${isOut ? " — reorder needed immediately" : ""}.`
+          );
+        }
       }
     }
 

@@ -2,7 +2,7 @@
 // src/database/schema.ts  (UPDATED — version 3)
 // ─────────────────────────────────────────────────────────────
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 5;
 
 export const CREATE_TABLES = `
   -- Core inventory
@@ -17,8 +17,9 @@ export const CREATE_TABLES = `
     sku         TEXT    NOT NULL DEFAULT '',
     barcode     TEXT,
     status      TEXT    NOT NULL DEFAULT 'in-stock',
-    lastUpdated TEXT    NOT NULL,
-    syncedAt    TEXT,
+    lastUpdated   TEXT    NOT NULL,
+    syncedAt      TEXT,
+    reorder_level INTEGER NOT NULL DEFAULT 10,
     UNIQUE(name, sku)
   );
 
@@ -112,7 +113,7 @@ export const CREATE_TABLES = `
 `;
 
 export const SEED_META = `
-  INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '${SCHEMA_VERSION}');
+  INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '5');
   INSERT OR IGNORE INTO meta (key, value) VALUES ('last_sync_at',   '');
   INSERT OR IGNORE INTO meta (key, value) VALUES ('bill_counter',   '1000');
   INSERT OR IGNORE INTO meta (key, value) VALUES ('shop_name',      'My Shop');

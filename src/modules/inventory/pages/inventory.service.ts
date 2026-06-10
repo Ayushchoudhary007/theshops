@@ -28,7 +28,8 @@ function rowToItem(r: Record<string, unknown>): InventoryItem {
     barcode:     r.barcode     as string | undefined,
     status:      r.status      as InventoryStatus,
     lastUpdated: r.lastUpdated as string,
-    syncedAt:    r.syncedAt    as string | null,
+    syncedAt:     r.syncedAt     as string | null,
+    reorder_level: (r.reorder_level as number) ?? 10,
   };
 }
 
@@ -88,10 +89,10 @@ export const InventoryService = {
 
     await run(
       `INSERT INTO inventory
-         (name,category,brand,price,stock,image,sku,barcode,status,lastUpdated,syncedAt)
-       VALUES (?,?,?,?,?,?,?,?,?,?,NULL)`,
+         (name,category,brand,price,stock,image,sku,barcode,status,lastUpdated,syncedAt,reorder_level)
+       VALUES (?,?,?,?,?,?,?,?,?,?,NULL,?)`,
       [item.name, item.category, item.brand, item.price, item.stock,
-       item.image, item.sku, item.barcode ?? null, status, now],
+       item.image, item.sku, item.barcode ?? null, status, now, item.reorder_level ?? 10],
     );
 
     const [{ id }] = await query<{ id: number }>(
@@ -115,10 +116,10 @@ export const InventoryService = {
     await run(
       `UPDATE inventory
        SET name=?,category=?,brand=?,price=?,stock=?,image=?,sku=?,
-           barcode=?,status=?,lastUpdated=?,syncedAt=NULL
+           barcode=?,status=?,lastUpdated=?,syncedAt=NULL,reorder_level=?
        WHERE id=?`,
       [merged.name, merged.category, merged.brand, merged.price, merged.stock,
-       merged.image, merged.sku, merged.barcode ?? null, status, now, id],
+       merged.image, merged.sku, merged.barcode ?? null, status, now, merged.reorder_level ?? 10, id],
     );
 
     await enqueueSync("inventory", "update", id,
