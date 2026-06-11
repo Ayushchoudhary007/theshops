@@ -39,6 +39,21 @@ export default function Customers() {
 
   useEffect(() => { void load(); }, [load]);
 
+  const loadCustomerBills = useCallback(async (customerId: number) => {
+    setBillsLoading(true);
+    try {
+      const bills = await query<import("../../billing/billing.types").Bill>(
+        "SELECT * FROM bills WHERE customer_id = ? ORDER BY createdAt DESC LIMIT 50",
+        [customerId]
+      );
+      setCustBills(bills);
+    } catch {
+      setCustBills([]);
+    } finally {
+      setBillsLoading(false);
+    }
+  }, []);
+
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);

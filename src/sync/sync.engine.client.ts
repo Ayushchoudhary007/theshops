@@ -16,6 +16,8 @@
 
 import { query, run } from "../database";
 import { getNetworkState } from "../hooks/useNetworkStatus";
+import { SubAccountStore } from "../modules/auth/auth.storage";
+import type { LocalSubAccount } from "../modules/auth/auth.types";
 
 // ── Simple event emitter ──────────────────────────────────────
 
@@ -370,7 +372,7 @@ export class SyncEngine {
 
   // ── Pull managers + staff from server → local SubAccountStore ──
 
-  private async pullSubAccounts(): Promise<void> {
+  async pullSubAccounts(): Promise<void> {
     const token = getToken();
     if (!token || token === "offline") return;
 
@@ -381,13 +383,13 @@ export class SyncEngine {
     if (user?.role !== "owner") return;
 
     try {
-      const { SubAccountStore } = await import("../modules/auth/auth.storage");
+
 
       // Pull managers
       const { data: managers } = await apiFetch<any[]>("/api/sub-accounts/managers");
       if (managers?.length) {
         for (const m of managers) {
-          const existing = SubAccountStore.getAll().find(a => a.serverId === m.id || a.email === m.email);
+          const existing = SubAccountStore.getAll().find((a: LocalSubAccount) => a.serverId === m.id || a.email === m.email);
           if (!existing) {
             SubAccountStore.upsert({
               localId:     m.id,
@@ -415,7 +417,7 @@ export class SyncEngine {
         const { data: staffList } = await apiFetch<any[]>(`/api/sub-accounts/staff?shopId=${shopId}`);
         if (staffList?.length) {
           for (const s of staffList) {
-            const existing = SubAccountStore.getAll().find(a => a.serverId === s.id || a.email === s.email);
+            const existing = SubAccountStore.getAll().find((a: LocalSubAccount) => a.serverId === s.id || a.email === s.email);
             if (!existing) {
               SubAccountStore.upsert({
                 localId:      s.id,

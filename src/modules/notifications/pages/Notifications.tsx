@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { BRAND, GLASS, RADIUS, COLOR, GLOBAL_STYLES } from "../../../design-tokens";
 import { NotificationService } from "../notifications.service";
+import { query, run } from "../../../database";
 import type { Notification, NotifType } from "../notifications.types";
 import { NOTIF_META } from "../notifications.types";
 
@@ -48,7 +49,7 @@ export default function Notifications() {
   useEffect(() => {
     (async () => {
       try {
-        const { query: dbQuery, run: dbRun } = await import("../../../database");
+        const { query: dbQuery, run: dbRun } = await Promise.resolve({ query, run });
         const seeded = await dbQuery<{ value: string }>(
           "SELECT value FROM meta WHERE key = 'notif_seeded'"
         );
